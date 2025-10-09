@@ -2,7 +2,6 @@
 // ESP8266(NodeMCU) + Pot(50k) + TM1637 + Web(HTTP)
 //  - キャリブボタン押下中に動いた最小～最大を学習
 //  - その区間を 0..100 に線形マップして表示＆HTTP配信
-//  - 将来WiFiManagerへ差し替えやすい構成
 // ==========================
 
 #include <Arduino.h>
@@ -10,6 +9,7 @@
 #include <ESP8266WebServer.h>
 #include <TM1637Display.h>
 #include <WiFiUdp.h>
+#include <WiFiManager.h>
 
 // --------- ピン定義 ----------
 #define CALIB_BUTTON_PIN D3   // 押すとLOW（内部プルアップ）
@@ -17,8 +17,8 @@
 #define TM1637_DIO_PIN   D2
 
 // --------- Wi-Fi（将来WiFiManager差し替え想定） ----------
-const char* WIFI_SSID = "SSID";
-const char* WIFI_PASS = "WifiPass";
+//const char* WIFI_SSID = "SSID";
+//const char* WIFI_PASS = "WifiPass";
 
 // --------- オブジェクト ----------
 ESP8266WebServer server(80);
@@ -135,32 +135,39 @@ void handleReset(){
   server.send(302, "text/plain", "Reset");
 }
 
+bool waitLongPressAtBoot(uint8_t pin, uint16_t ms){
+  uint32_t t0 = millis();
+  while(millis() - t0 < ms){
+    if(digitalRead(pin) != LOW) return false; // 途中で離したら中止
+    delay(10);
+  }
+  return true; // 所定時間押され続けた
+}
+
 void setup() {
   Serial.begin(115200);
   delay(50);
   pinMode(CALIB_BUTTON_PIN, INPUT_PULLUP); // 押すとLOW
   display.setBrightness(7, true);
   display.showNumberDec(0, false);
+  
+  WiFiManager wm;
+  wm.setHostname("ESP8266-Pot");
+  wm.setConnectRetries(3);
+  wm.setConfigPortalTimeout(180);
 
-  // ---- Wi-Fi（WiFiManagerに差し替え可）----
-  // #include <WiFiManager.h>
-  // WiFiManager wm; wm.autoConnect("PotConfigAP");
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
-  Serial.print("WiFi connecting");
-  uint32_t t0 = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - t0 < 15000) {
-    delay(300); Serial.print(".");
-  }
-  Serial.println();
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.print("IP: "); Serial.println(WiFi.localIP());
+  // 電源投入時にボタン長押しで設定初期化
+  if (digitalRead(CALIB_BUTTON_PIN) == LOW && waitLongPressAtBoot(CALIB_BUTTON_PIN, 3000)){
+    Serial.println("WiFi settings reset requested.");
+    wm.resetSettings();                    // 保存済みSSID/パス消去
+    // そのまま設定ポータルへ
+    wm.startConfigPortal("PotConfigAP");
   } else {
-    Serial.println("WiFi not connected (continue offline HTTP won’t work).");
-    // 必要ならAPフォールバックを有効化:
-    // WiFi.mode(WIFI_AP); WiFi.softAP("PotAP","password1234");
-    // Serial.print("AP IP: "); Serial.println(WiFi.softAPIP());
+    // ふつうは既存設定で接続。未設定ならポータルが開く
+    wm.autoConnect("PotConfigAP");
   }
+
+  Serial.print("IP: "); Serial.println(WiFi.localIP());
 
   // ---- Webサーバ ----
   server.on("/", handleRoot);

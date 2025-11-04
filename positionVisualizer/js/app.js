@@ -133,6 +133,9 @@
         });
       });
 
+      // Sync initial mock mode from checkbox BEFORE first render
+      vm.setMockMode(mockToggle.checked);
+
       // View + Sync
       const binding = new Bindings.MonitorBinding(vm);
       binding.attach();

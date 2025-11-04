@@ -18,31 +18,18 @@
     } catch(e) {}
   };
   MonitorBinding.prototype.getVisibleIndices = function(){
-    // In mock mode, show all devices with names
-    // In non-mock mode, show only devices with IP addresses set
+    // In mock mode: show all → return null (no filtering)
+    // In non-mock mode: show only devices with IP addresses
     const mockMode = this.vm.mockMode;
+    if (mockMode) return null;
     const visibleIndices = [];
-    
     for (let i = 0; i < 4; i++) {
       const ipEl = document.getElementById(`device${i+1}-ip`);
-      const nameEl = document.getElementById(`device${i+1}-name`);
       const ip = ipEl ? ipEl.value.trim() : '';
-      const name = nameEl ? nameEl.value.trim() : '';
-      
-      if (mockMode) {
-        // In mock mode, show if name is set
-        if (name) {
-          visibleIndices.push(i);
-        }
-      } else {
-        // In non-mock mode, show only if IP is set
-        if (ip) {
-          visibleIndices.push(i);
-        }
-      }
+      if (ip) visibleIndices.push(i);
     }
-    
-    return visibleIndices.length > 0 ? visibleIndices : null;
+    // May be empty (hide all)
+    return visibleIndices;
   };
 
   MonitorBinding.prototype.attach = function(){
@@ -137,10 +124,8 @@
       const nextSvg = temp.querySelector('svg[data-meter]'); if (!nextSvg) return;
       // Update perf groups
       const nextGroups = nextSvg.querySelectorAll('g[data-perf]');
-      const nextKeys = new Set();
       nextGroups.forEach((ng) => {
         const key = ng.getAttribute('data-perf');
-        nextKeys.add(key);
         let g = existingSvg.querySelector(`g[data-perf="${key}"]`);
         if (!g) { g = ng.cloneNode(true); existingSvg.appendChild(g); return; }
         // Update transform for animation
@@ -165,11 +150,6 @@
             setHref(updatedCImgs[i], href);
           }
         }
-      });
-      // Remove groups not present anymore
-      existingSvg.querySelectorAll('g[data-perf]').forEach((cg) => {
-        const k = cg.getAttribute('data-perf');
-        if (!nextKeys.has(k)) cg.remove();
       });
     };
     // receivers: prefer svg mirroring

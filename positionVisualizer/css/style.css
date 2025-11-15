@@ -14,11 +14,8 @@ body {
 }
 
 .container {
-  display: flex;
-  gap: 24px;
-  align-items: flex-start;
-  justify-content: center;
   padding: 0;
+  display: block;
   max-width: 1600px;
   margin: 0 auto;
 }
@@ -75,7 +72,7 @@ body {
   max-width: 980px;
   margin: 0 auto;
   aspect-ratio: 16 / 9;
-  background: #0a0e1a;
+  background: #00ff00; /* Green for chroma key */
   border-radius: 12px;
   overflow: hidden;
   border: 1px solid #1e293b;
@@ -232,6 +229,51 @@ body {
   padding-bottom: 8px;
 }
 
+/* 値の範囲設定セクションの入力欄 */
+.range-settings-section .device-group input[type="number"],
+.range-settings-section .device-group input[type="text"] {
+  margin-top: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #334155;
+  background: #0b1220;
+  color: #e5e7eb;
+  font-size: 14px;
+  transition: all 0.2s ease;
+  font-family: inherit;
+  width: 100%;
+}
+
+.range-settings-section .device-group input[type="number"]:focus,
+.range-settings-section .device-group input[type="text"]:focus {
+  outline: none;
+  border-color: #3b82f6;
+  background: #0f172a;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.range-settings-section .device-group input[type="number"]:hover,
+.range-settings-section .device-group input[type="text"]:hover {
+  border-color: #475569;
+}
+
+.range-settings-section .device-group input[type="text"]::placeholder {
+  color: #64748b;
+}
+
+/* 数値入力のスピナーボタンのスタイル */
+.range-settings-section .device-group input[type="number"]::-webkit-inner-spin-button,
+.range-settings-section .device-group input[type="number"]::-webkit-outer-spin-button {
+  opacity: 1;
+  cursor: pointer;
+  height: 20px;
+}
+
+.range-settings-section .device-group input[type="number"]::-webkit-inner-spin-button:hover,
+.range-settings-section .device-group input[type="number"]::-webkit-outer-spin-button:hover {
+  opacity: 0.8;
+}
+
 /* ログ再生セクション */
 .log-replay-section {
   margin-top: 20px;
@@ -256,6 +298,33 @@ body {
 }
 
 .log-replay-buttons button {
+  flex: 1;
+}
+
+/* ログ記録セクション */
+.log-record-section {
+  margin-top: 20px;
+  padding: 16px;
+  background: rgba(15, 23, 42, 0.5);
+  border-radius: 12px;
+  border: 1px solid #334155;
+}
+
+.log-record-section label {
+  font-size: 14px;
+  color: #cbd5e1;
+  font-weight: 600;
+  display: block;
+  margin-bottom: 8px;
+}
+
+.log-record-buttons {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.log-record-buttons button {
   flex: 1;
 }
 
@@ -417,9 +486,10 @@ button:disabled:hover {
 }
 
 /* ファイル入力 */
-.device-group input[type="file"] {
+.device-group input[type="file"],
+.log-replay-section input[type="file"] {
   margin-top: 8px;
-  padding: 8px;
+  padding: 10px 12px;
   border-radius: 8px;
   border: 1px solid #334155;
   background: #0b1220;
@@ -431,15 +501,45 @@ button:disabled:hover {
   width: 100%;
 }
 
-.device-group input[type="file"]:hover {
+.device-group input[type="file"]:hover,
+.log-replay-section input[type="file"]:hover {
   border-color: #475569;
   background: #0f172a;
 }
 
-.device-group input[type="file"]:focus {
+.device-group input[type="file"]:focus,
+.log-replay-section input[type="file"]:focus {
   outline: none;
   border-color: #3b82f6;
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+/* ファイル入力のラベル部分のスタイル（統一） */
+.device-group input[type="file"]::file-selector-button,
+.log-replay-section input[type="file"]::file-selector-button {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  border: none;
+  color: #fff;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-right: 12px;
+  font-family: inherit;
+}
+
+.device-group input[type="file"]::file-selector-button:hover,
+.log-replay-section input[type="file"]::file-selector-button:hover {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(37, 99, 235, 0.3);
+}
+
+.device-group input[type="file"]::file-selector-button:active,
+.log-replay-section input[type="file"]::file-selector-button:active {
+  transform: translateY(0);
 }
 
 /* 履歴パネル */

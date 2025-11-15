@@ -14,7 +14,7 @@
 
   const toRadians = (angle) => (angle * Math.PI) / 180;
 
-  function calculateViewBox() { // 外側の円の大きさを計算
+  function calculateViewBox() { // 外側の円の大きさを計算（アイコンの位置も考慮）
     const outerRadius = baseRadius + strokeWidth / 2;
     const innerRadius = baseRadius - strokeWidth / 2;
     const angles = [startAngle, endAngle];
@@ -34,7 +34,42 @@
       minY = Math.min(minY, y_outer, y_inner);
       maxY = Math.max(maxY, y_outer, y_inner);
     });
-    return { width: maxX - minX, height: maxY - minY, offsetX: -minX, offsetY: -minY };
+    
+    // Consider icon positions (icons are 50x50, with offsets up to 60)
+    const maxIconOffset = Math.max(...LANE_OFFSETS.map(Math.abs));
+    const iconRadius = 25; // Half of icon size (50/2)
+    const maxRadius = baseRadius + maxIconOffset + iconRadius;
+    
+    // Check icon positions at start and end angles
+    const startRad = toRadians(startAngle);
+    const endRad = toRadians(endAngle);
+    const iconPositions = [
+      { x: baseCx + maxRadius * Math.cos(startRad), y: baseCy + maxRadius * Math.sin(startRad) },
+      { x: baseCx + maxRadius * Math.cos(endRad), y: baseCy + maxRadius * Math.sin(endRad) }
+    ];
+    
+    // Also check middle positions for icons
+    for (let i = 0; i <= 10; i++) {
+      const t = i / 10;
+      const angle = startAngle + (endAngle - startAngle) * t;
+      const angleRad = toRadians(angle);
+      const radius = baseRadius + maxIconOffset;
+      const x = baseCx + radius * Math.cos(angleRad);
+      const y = baseCy + radius * Math.sin(angleRad);
+      minX = Math.min(minX, x - iconRadius);
+      maxX = Math.max(maxX, x + iconRadius);
+      minY = Math.min(minY, y - iconRadius);
+      maxY = Math.max(maxY, y + iconRadius);
+    }
+    
+    // Add extra padding to ensure icons are never clipped
+    const padding = 30; // Increased padding for overlay
+    return { 
+      width: maxX - minX + padding * 2, 
+      height: maxY - minY + padding * 2, 
+      offsetX: -minX + padding, 
+      offsetY: -minY + padding 
+    };
   }
 
   const viewBox = calculateViewBox();
@@ -69,16 +104,28 @@
     return { x, y };
   }
 
+  function updateTickLabels(svg, minValue, maxValue, unit) {
+    if (!svg) return;
+    
+    // Remove existing label group
+    const existingGroup = svg.querySelector('g.tick-labels-group');
+    if (existingGroup) {
+      existingGroup.remove();
+    }
+  
+  }
+
   function ensureSvg(containerEl) {
     let svg = containerEl.querySelector('svg[data-meter]');
     if (svg) return svg;
     svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('data-meter', '');
     svg.setAttribute('width', '100%');
-    svg.setAttribute('height', 'auto');
+    svg.setAttribute('height', '100%');
     svg.setAttribute('viewBox', `0 0 ${viewBox.width} ${viewBox.height}`);
     svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
     svg.style.display = 'block';
+    svg.style.verticalAlign = 'middle';
 
     const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
     const gradient = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
@@ -88,10 +135,9 @@
     gradient.setAttribute('x2', String(viewBox.width));
     gradient.setAttribute('y2', String(viewBox.height / 2));
     gradient.setAttribute('gradientUnits', 'userSpaceOnUse');
-    const s1 = document.createElementNS('http://www.w3.org/2000/svg', 'stop'); s1.setAttribute('offset', '0'); s1.setAttribute('stop-color', '#1497bc');
-    const s2 = document.createElementNS('http://www.w3.org/2000/svg', 'stop'); s2.setAttribute('offset', '0.52'); s2.setAttribute('stop-color', '#9c96c8');
-    const s3 = document.createElementNS('http://www.w3.org/2000/svg', 'stop'); s3.setAttribute('offset', '1'); s3.setAttribute('stop-color', '#6e4096');
-    gradient.append(s1, s2, s3);
+    const s1 = document.createElementNS('http://www.w3.org/2000/svg', 'stop'); s1.setAttribute('offset', '0'); s1.setAttribute('stop-color', '#71cce2');
+    const s2 = document.createElementNS('http://www.w3.org/2000/svg', 'stop'); s2.setAttribute('offset', '1'); s2.setAttribute('stop-color', '#6e40a9');
+    gradient.append(s1, s2);
 
     const filter = document.createElementNS('http://www.w3.org/2000/svg', 'filter');
     filter.setAttribute('id', 'iconShadow');
@@ -151,9 +197,19 @@
     const visibleIndices = (options && options.visibleIndices) || null; // null means all visible
     const actualValues = (options && options.actualValues) || null; // Actual values for display (not normalized)
     const unit = (options && options.unit) || '%'; // Unit for display
+    const minValue = (options && typeof options.minValue === 'number') ? options.minValue : 0;
+    const maxValue = (options && typeof options.maxValue === 'number') ? options.maxValue : 100;
+    
+    // Helper function to convert normalized value (0-100%) to actual value based on min/max settings
+    function denormalizeValue(percentage) {
+      const range = maxValue - minValue;
+      if (range === 0) return minValue; // Avoid division by zero
+      return minValue + (percentage / 100) * range;
+    }
+    
     const containerEl = document.getElementById('meter-container');
     const svg = ensureSvg(containerEl);
-
+    
     const existing = new Map();
     svg.querySelectorAll('g[data-perf]').forEach(g => {
       existing.set(g.getAttribute('data-perf'), g);
@@ -204,68 +260,35 @@
         fgImage.setAttribute('height', '50');
         fgImage.setAttribute('filter', 'url(#iconShadow)');
 
-        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        text.setAttribute('x', '0');
-        text.setAttribute('y', String(textYOffset));
-        text.setAttribute('text-anchor', 'middle');
-        text.setAttribute('font-size', '14');
-        text.setAttribute('font-weight', '700');
-        text.setAttribute('font-style', 'normal');
-        text.setAttribute('font-family', 'fot-udkakugoc80-pro, sans-serif');
-        text.setAttribute('fill', '#ffffff');
-        text.setAttribute('paint-order', 'stroke');
-        text.setAttribute('stroke', 'rgba(0,0,0,0.6)');
-        text.setAttribute('stroke-width', '3');
-        // Display actual value if provided, otherwise use normalized value
+        // Machine-readable attributes for UI parsing
         const displayValue = actualValues && actualValues[index] !== undefined 
           ? actualValues[index] 
-          : val;
+          : denormalizeValue(safeVal);
         const roundedDisplay = Math.round(displayValue);
-        const displayText = numbersOnly 
-          ? `${roundedDisplay}${unit}` 
-          : `${names[index] || ''} ${roundedDisplay}${unit}`;
-        text.textContent = displayText;
-
-        // Machine-readable attributes for UI parsing
         g.setAttribute('data-percentage', String(Math.max(0, Math.min(100, safeVal))));
         g.setAttribute('data-actual', String(roundedDisplay));
         g.setAttribute('data-unit', unit);
-        text.setAttribute('data-actual', String(roundedDisplay));
-        text.setAttribute('data-unit', unit);
 
-        // Append in order: background, foreground, text (text on top)
-        g.append(bgImage, fgImage, text);
+        // Append in order: background, foreground (no text)
+        g.append(bgImage, fgImage);
         // Set initial transform (no animation on first paint)
         g.setAttribute('transform', `translate(${pos.x}, ${pos.y})`);
         svg.appendChild(g);
       } else {
-        // Update label
+        // Remove any existing text element
         const t = g.querySelector('text');
         if (t) {
-          // Display actual value if provided, otherwise use normalized value
-          const displayValue = actualValues && actualValues[index] !== undefined 
-            ? actualValues[index] 
-            : val;
-          const roundedDisplay = Math.round(displayValue);
-          const displayText = numbersOnly 
-            ? `${roundedDisplay}${unit}` 
-            : `${names[index] || ''} ${roundedDisplay}${unit}`;
-          t.textContent = displayText;
-          // Update machine-readable attributes
-          const clampedPercent = Math.max(0, Math.min(100, safeVal));
-          const parentG = t.closest('g[data-perf]');
-          if (parentG) {
-            parentG.setAttribute('data-percentage', String(clampedPercent));
-            parentG.setAttribute('data-actual', String(roundedDisplay));
-            parentG.setAttribute('data-unit', unit);
-          }
-          t.setAttribute('data-actual', String(roundedDisplay));
-          t.setAttribute('data-unit', unit);
-          t.setAttribute('y', String(textYOffset));
-          t.setAttribute('font-weight', '700');
-          t.setAttribute('font-style', 'normal');
-          t.setAttribute('font-family', 'fot-udkakugoc80-pro, sans-serif');
+          t.remove();
         }
+        // Update machine-readable attributes
+        const displayValue = actualValues && actualValues[index] !== undefined 
+          ? actualValues[index] 
+          : denormalizeValue(safeVal);
+        const roundedDisplay = Math.round(displayValue);
+        const clampedPercent = Math.max(0, Math.min(100, safeVal));
+        g.setAttribute('data-percentage', String(clampedPercent));
+        g.setAttribute('data-actual', String(roundedDisplay));
+        g.setAttribute('data-unit', unit);
         // Update background user icon and foreground SVG icon
         const imgs = g.querySelectorAll('image');
         // imgs[0] -> bg, imgs[1] -> fg
@@ -299,6 +322,9 @@
 
     // Remove any extra stale groups
     existing.forEach((g) => g.remove());
+    
+    // Update tick labels with min/max values (after all other updates)
+    updateTickLabels(svg, minValue, maxValue, unit);
   }
 
   function initMeter(containerEl) {
@@ -307,5 +333,4 @@
 
   window.MeterRenderer = { initMeter, updateMeter };
 })();
-
 

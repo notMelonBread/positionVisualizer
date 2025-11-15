@@ -12,4 +12,3 @@
   window.MVVM = window.MVVM || {}; window.MVVM.Emitter = Emitter;
 })();
 
-

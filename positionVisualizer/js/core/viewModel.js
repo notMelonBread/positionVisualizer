@@ -22,14 +22,9 @@
   MeterViewModel.prototype.setMinValue = function(v){ 
     let min = Number(v);
     if (!isNaN(min)) {
-      if (min < 0) min = 0;
-      if (min > 100) min = 100;
+      // Allow any numeric value, but ensure min < max
       if (min >= this.maxValue) {
-        if (this.maxValue < 100) {
-          this.maxValue = Math.min(100, min + 1);
-        } else {
-          min = Math.max(0, this.maxValue - 1);
-        }
+        this.maxValue = min + 1;
       }
       this.minValue = min;
       this._notify();
@@ -38,14 +33,9 @@
   MeterViewModel.prototype.setMaxValue = function(v){ 
     let max = Number(v);
     if (!isNaN(max)) {
-      if (max < 0) max = 0;
-      if (max > 100) max = 100;
+      // Allow any numeric value, but ensure max > min
       if (max <= this.minValue) {
-        if (this.minValue > 0) {
-          this.minValue = Math.max(0, max - 1);
-        } else {
-          max = Math.min(100, this.minValue + 1);
-        }
+        this.minValue = max - 1;
       }
       this.maxValue = max;
       this._notify();
@@ -133,5 +123,4 @@
 
   window.MVVM = window.MVVM || {}; window.MVVM.MeterViewModel = MeterViewModel;
 })();
-
 

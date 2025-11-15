@@ -17,4 +17,3 @@
   window.MVVM = window.MVVM || {}; window.MVVM.MeterState = MeterState;
 })();
 
-

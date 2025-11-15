@@ -47,39 +47,33 @@
             <div class="device-inputs">
                 <div class="device-group">
                     <label>デバイス1 <span class="ip-label">IP:</span></label>
-                    <input type="text" id="device1-ip" placeholder="例: 192.168.1.100" class="device-ip">
-                    <input type="text" id="device1-name" placeholder="名前" value="出演者1">
+                    <!-- <input type="text" id="device1-ip" placeholder="例: 192.168.1.100" class="device-ip"> -->
                     <input type="file" id="device1-icon" accept="image/*">
                 </div>
                 <div class="device-group">
                     <label>デバイス2 <span class="ip-label">IP:</span></label>
-                    <input type="text" id="device2-ip" placeholder="例: 192.168.1.101" class="device-ip">
-                    <input type="text" id="device2-name" placeholder="名前" value="出演者2">
+                    <!-- <input type="text" id="device2-ip" placeholder="例: 192.168.1.101" class="device-ip"> -->
                     <input type="file" id="device2-icon" accept="image/*">
                 </div>
                 <div class="device-group">
                     <label>デバイス3 <span class="ip-label">IP:</span></label>
-                    <input type="text" id="device3-ip" placeholder="例: 192.168.1.102" class="device-ip">
-                    <input type="text" id="device3-name" placeholder="名前" value="出演者3">
+                    <!-- <input type="text" id="device3-ip" placeholder="例: 192.168.1.102" class="device-ip"> -->
                     <input type="file" id="device3-icon" accept="image/*">
                 </div>
                 <div class="device-group">
                     <label>デバイス4 <span class="ip-label">IP:</span></label>
-                    <input type="text" id="device4-ip" placeholder="例: 192.168.1.103" class="device-ip">
-                    <input type="text" id="device4-name" placeholder="名前" value="出演者4">
+                    <!-- <input type="text" id="device4-ip" placeholder="例: 192.168.1.103" class="device-ip"> -->
                     <input type="file" id="device4-icon" accept="image/*">
                 </div>
                 <div class="device-group">
                     <label>デバイス5 <span class="ip-label">IP:</span></label>
-                    <input type="text" id="device5-ip" placeholder="例: 192.168.1.104" class="device-ip">
-                    <input type="text" id="device5-name" placeholder="名前" value="">
+                    <!-- <input type="text" id="device5-ip" placeholder="例: 192.168.1.104" class="device-ip"> -->
                     <input type="file" id="device5-icon" accept="image/*">
                 </div>
                 <div class="device-group">
                     <label>デバイス6 <span class="ip-label">IP:</span></label>
-                    <input type="text" id="device6-ip" placeholder="例: 192.168.1.105" class="device-ip">
-                    <input type="text" id="device6-name" placeholder="名前" value="">
-                    <input type="file" id="device6-icon" accept="image/*">
+                    <!-- <input type="text" id="device6-ip" placeholder="例: 192.168.1.105" class="device-ip">                    <input type="file" id="device6-icon" accept="image/*"> -->
+                    <input type="file" id="device5-icon" accept="image/*">
                 </div>
             </div>
             <div id="manual-controls" style="display:none;">
@@ -105,29 +99,7 @@
                 <button id="start-btn">開始</button>
                 <button id="stop-btn">停止</button>
                 <button id="clear-history-btn">履歴クリア</button>
-            </div>
-            <div class="log-replay-section">
-                <label>ログ再生</label>
-                <input type="file" id="log-file" accept="application/json,.json">
-                <div class="log-replay-buttons">
-                    <button id="play-log">再生</button>
-                    <button id="stop-log">停止</button>
-                </div>
-            </div>
-            <div class="range-settings-section">
-                <h3>値の範囲設定</h3>
-                <div class="device-group">
-                    <label>最小値</label>
-                    <input type="number" id="min-value" value="0" step="0.1">
-                </div>
-                <div class="device-group">
-                    <label>最大値</label>
-                    <input type="number" id="max-value" value="100" step="0.1">
-                </div>
-                <div class="device-group">
-                    <label>単位</label>
-                    <input type="text" id="value-unit" value="%" placeholder="例: %, °, kg">
-                </div>
+                <button id="open-settings-btn">設定を開く</button>
             </div>
             <div class="status">
                 <span>更新間隔: <input type="number" id="poll-interval" value="200" min="50" max="1000" step="50"> ms</span>
@@ -140,21 +112,13 @@
             </div>
         </div>
 
-        <div class="history-panel">
+        <!-- <div class="history-panel">
             <h3>数値変動履歴</h3>
             <div id="history-content"></div>
-        </div>
+        </div> -->
     </div>
 
     <script>window.USE_MVVM = true;</script>
-    <script src="js/mvvm/event.js"></script>
-    <script src="js/mvvm/model.js"></script>
-    <script src="js/mvvm/viewModel.js"></script>
-    <script src="js/mvvm/bindings.js"></script>
-    <script src="js/meterRenderer.js"></script>
-    <script src="js/iconRenderer.js"></script>
-    <script src="js/replay.js"></script>
-    <script src="js/mock.js"></script>
     <script src="js/app.js"></script>
 </body>
 </html>

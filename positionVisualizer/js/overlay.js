@@ -1,4 +1,42 @@
 (function(){
+  // Load dependencies dynamically
+  function loadScript(src) {
+    return new Promise((resolve, reject) => {
+      // Check if already loaded by checking window objects
+      if (src.includes('meterRenderer.js') && window.MeterRenderer) {
+        resolve();
+        return;
+      }
+      if (src.includes('event.js') && window.MVVM && window.MVVM.Emitter) {
+        resolve();
+        return;
+      }
+      if (src.includes('model.js') && window.MVVM && window.MVVM.MeterState) {
+        resolve();
+        return;
+      }
+      if (src.includes('viewModel.js') && window.MVVM && window.MVVM.MeterViewModel) {
+        resolve();
+        return;
+      }
+      if (src.includes('bindings.js') && window.MVVM && window.MVVM.Bindings) {
+        resolve();
+        return;
+      }
+      
+      const script = document.createElement('script');
+      // Add cache busting
+      const cacheBuster = '?v=' + Date.now();
+      script.src = src + cacheBuster;
+      script.onload = resolve;
+      script.onerror = () => {
+        console.error('Failed to load script:', src);
+        reject(new Error('Failed to load: ' + src));
+      };
+      document.head.appendChild(script);
+    });
+  }
+
   function startVersionWatcher() {
     let lastHash = null;
     function hashString(s){
@@ -23,15 +61,87 @@
   }
   startVersionWatcher();
 
-  if (window.USE_MVVM) {
-    const { MeterState, MeterViewModel, Bindings } = window.MVVM;
-    window.addEventListener('DOMContentLoaded', () => {
+  async function initOverlay() {
+    if (!window.USE_MVVM) {
+      // Legacy mode - initialize directly
+      initializeLegacy();
+      return;
+    }
+
+    // Load dependencies in order
+    const dependencies = [
+      'js/core/event.js',
+      'js/core/model.js',
+      'js/core/viewModel.js',
+      'js/bindings/bindings.js',
+      'js/views/meterRenderer.js',
+      'js/views/iconRenderer.js'
+    ];
+
+    try {
+      // Check if already loaded
+      const needsLoading = dependencies.filter(src => {
+        const script = Array.from(document.scripts).find(s => s.src.includes(src));
+        return !script;
+      });
+
+      if (needsLoading.length > 0) {
+        for (const src of needsLoading) {
+          try {
+            console.log('Loading script:', src);
+            await loadScript(src);
+            // Small delay to ensure script execution
+            await new Promise(resolve => setTimeout(resolve, 50));
+            
+            // Verify critical modules after loading
+            if (src.includes('event.js') && !window.MVVM?.Emitter) {
+              throw new Error('event.js failed to initialize window.MVVM.Emitter');
+            }
+            if (src.includes('model.js') && !window.MVVM?.MeterState) {
+              throw new Error('model.js failed to initialize window.MVVM.MeterState');
+            }
+            if (src.includes('viewModel.js') && !window.MVVM?.MeterViewModel) {
+              throw new Error('viewModel.js failed to initialize window.MVVM.MeterViewModel');
+            }
+            if (src.includes('bindings.js') && !window.MVVM?.Bindings) {
+              throw new Error('bindings.js failed to initialize window.MVVM.Bindings');
+            }
+          } catch (error) {
+            console.error('Failed to load script:', src, error);
+            throw error;
+          }
+        }
+      }
+
+      // Wait for DOM to be ready
+      if (document.readyState === 'loading') {
+        await new Promise(resolve => window.addEventListener('DOMContentLoaded', resolve));
+      }
+
+      // Verify that MVVM is loaded
+      if (!window.MVVM) {
+        throw new Error('MVVM modules failed to load. window.MVVM is undefined.');
+      }
+      if (!window.MVVM.MeterState || !window.MVVM.MeterViewModel || !window.MVVM.Bindings) {
+        throw new Error('MVVM modules are incomplete. Missing: ' + 
+          (!window.MVVM.MeterState ? 'MeterState ' : '') +
+          (!window.MVVM.MeterViewModel ? 'MeterViewModel ' : '') +
+          (!window.MVVM.Bindings ? 'Bindings' : ''));
+      }
+
+      // Now initialize MVVM mode
+      const { MeterState, MeterViewModel, Bindings } = window.MVVM;
       const vm = new MeterViewModel(new MeterState([20,45,75,45], ['','','',''], 'assets/icon.svg'));
       const binding = new Bindings.OverlayBinding(vm);
       binding.attach();
-    });
-    return;
+    } catch (error) {
+      console.error('Failed to load dependencies:', error);
+      // Fallback to legacy mode
+      initializeLegacy();
+    }
   }
+
+  function initializeLegacy() {
   const url = new URL(window.location.href);
   const icon = url.searchParams.get('icon') || 'assets/icon.svg';
   const namesParam = url.searchParams.get('names');
@@ -135,7 +245,14 @@
   pollBridge();
 
   window.addEventListener('DOMContentLoaded', init);
-  
+  }
+
+  // Start initialization
+  if (document.readyState === 'loading') {
+    window.addEventListener('DOMContentLoaded', initOverlay);
+  } else {
+    initOverlay();
+  }
 })();
 
 

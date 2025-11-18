@@ -149,17 +149,34 @@
   };
   MonitorBinding.prototype.getVisibleIndices = function(){
     // In mock mode: show all → return null (no filtering)
-    // In non-mock mode: show only devices with IP addresses
+    // In non-mock mode: show only devices with IP addresses OR devices that have received data
     const mockMode = this.vm.mockMode;
     if (mockMode) return null;
+    
     const visibleIndices = [];
+    const activeDevices = new Set();
+    
+    // First, collect devices with IP addresses
     for (let i = 0; i < 6; i++) {
       const ipEl = document.getElementById(`device${i+1}-ip`);
       const ip = ipEl ? ipEl.value.trim() : '';
-      if (ip) visibleIndices.push(i);
+      if (ip) {
+        activeDevices.add(i);
+      }
     }
-    // May be empty (hide all)
-    return visibleIndices;
+    
+    // Also include devices that have received data (have non-null values, including 0)
+    const state = this.vm.state;
+    for (let i = 0; i < 6; i++) {
+      const value = state.values[i];
+      if (value !== null && value !== undefined && !isNaN(value)) {
+        activeDevices.add(i);
+      }
+    }
+    
+    // Convert to sorted array
+    const indices = Array.from(activeDevices).sort((a, b) => a - b);
+    return indices.length > 0 ? indices : null;
   };
 
   // Start WebSocket connection for device data (replaces HTTP polling)
@@ -310,14 +327,16 @@
     // Ensure there is at least a placeholder meter so overlay is never blank
     try {
       MeterRenderer.initMeter(container);
-      MeterRenderer.updateMeter([20,45,75,45], { 
+      // Start with empty state - no default values
+      MeterRenderer.updateMeter([], { 
         names: ['','','',''], 
-        icon: 'assets/icon.svg', 
+        icon: null, 
         numbersOnly: true, 
         textYOffset: 15,
         unit: this.vm.unit || '%',
         minValue: this.vm.minValue || 0,
-        maxValue: this.vm.maxValue || 100
+        maxValue: this.vm.maxValue || 100,
+        visibleIndices: null // Will be calculated dynamically
       });
       initialized = !!container.querySelector('svg[data-meter]');
       
@@ -506,12 +525,8 @@
       if (name) vm.setName(idx, name);
     });
 
-    // Bind buttons
-    const startBtn = document.getElementById('start-btn');
-    const stopBtn = document.getElementById('stop-btn');
+    // Bind buttons (start/stop buttons removed - auto-connect on startup)
     const clearHistoryBtn = document.getElementById('clear-history-btn');
-    if (startBtn) startBtn.addEventListener('click', () => vm.start());
-    if (stopBtn) stopBtn.addEventListener('click', () => vm.stop());
     if (clearHistoryBtn) {
       clearHistoryBtn.addEventListener('click', () => {
         const el = document.getElementById('history-content');
@@ -621,15 +636,48 @@
     for (let i = 1; i <= 6; i++) {
       const input = document.getElementById(`device${i}-icon`);
       if (input) {
+        const button = input.closest('.icon-file-button');
+        const buttonText = button ? button.querySelector('.icon-button-text') : null;
+        
+        // Update icon state class and button text based on current state
+        const updateIconState = () => {
+          const hasIcon = vm.state.icons && vm.state.icons[i - 1];
+          if (button) {
+            if (hasIcon) {
+              button.classList.add('has-icon');
+              if (buttonText) buttonText.textContent = '✓ 登録済み';
+            } else {
+              button.classList.remove('has-icon');
+              if (buttonText) buttonText.textContent = '画像を選択';
+            }
+          }
+        };
+        
+        // Initial state check
+        updateIconState();
+        
         input.addEventListener('change', () => {
           const file = input.files && input.files[0];
-          if (!file) return;
+          if (!file) {
+            if (button) button.classList.remove('has-icon');
+            if (buttonText) buttonText.textContent = '画像を選択';
+            return;
+          }
           const reader = new FileReader();
           reader.onload = () => {
             const dataUrl = String(reader.result || '');
-            if (dataUrl) vm.setIconAt(i - 1, dataUrl);
+            if (dataUrl) {
+              vm.setIconAt(i - 1, dataUrl);
+              if (button) button.classList.add('has-icon');
+              if (buttonText) buttonText.textContent = '✓ 登録済み';
+            }
           };
           reader.readAsDataURL(file);
+        });
+        
+        // Watch for icon changes from other sources
+        vm.onChange(() => {
+          updateIconState();
         });
       }
     }

@@ -10,7 +10,23 @@
   const strokeWidth = 100;
   const startAngle = -140;
   const endAngle = -40;
-  const LANE_OFFSETS = [-40, -20, 0, 20, 40, 60]
+  const LANE_OFFSETS = [-40, -20, 0, 20, 40, 60]; // Fallback for max 6 devices
+  const MAX_LANE_OFFSET = 30; // Maximum offset from base radius (within meter bounds)
+  const MIN_LANE_OFFSET = -30; // Minimum offset from base radius (within meter bounds)
+  
+  // Calculate lane offsets dynamically based on device count
+  function calculateLaneOffsets(deviceCount) {
+    if (deviceCount <= 0) return [];
+    if (deviceCount === 1) return [0]; // Center for single device
+    // Distribute evenly between MIN_LANE_OFFSET and MAX_LANE_OFFSET
+    const offsets = [];
+    for (let i = 0; i < deviceCount; i++) {
+      const t = deviceCount === 1 ? 0.5 : i / (deviceCount - 1); // 0 to 1
+      const offset = MIN_LANE_OFFSET + (MAX_LANE_OFFSET - MIN_LANE_OFFSET) * t;
+      offsets.push(offset);
+    }
+    return offsets;
+  }
 
   const toRadians = (angle) => (angle * Math.PI) / 180;
 
@@ -93,12 +109,24 @@
     return `M ${x1} ${y1} L ${x2} ${y2} A ${outerRadius} ${outerRadius} 0 ${largeArc} 1 ${x3} ${y3} L ${x4} ${y4} A ${innerRadius} ${innerRadius} 0 ${largeArc} 0 ${x1} ${y1}`;
   }
 
-  function calculateIconPosition(percentage, laneIndex) {
+  function calculateIconPosition(percentage, laneIndex, deviceCount) {
     const clamped = Math.max(0, Math.min(100, percentage));
     const t = clamped / 100;
     const angle = startAngle + (endAngle - startAngle) * t;
     const angleRad = toRadians(angle);
-    const radius = baseRadius + LANE_OFFSETS[laneIndex];
+    
+    // Use dynamic lane offsets if deviceCount is provided, otherwise fallback to fixed offsets
+    let laneOffsets;
+    if (deviceCount && deviceCount > 0) {
+      laneOffsets = calculateLaneOffsets(deviceCount);
+    } else {
+      laneOffsets = LANE_OFFSETS;
+    }
+    
+    // Clamp laneIndex to valid range
+    const safeLaneIndex = Math.max(0, Math.min(laneOffsets.length - 1, laneIndex));
+    const offset = laneOffsets[safeLaneIndex] || 0;
+    const radius = baseRadius + offset;
     const x = cx + radius * Math.cos(angleRad);
     const y = cy + radius * Math.sin(angleRad);
     return { x, y };
@@ -190,7 +218,7 @@
 
   function updateMeter(values, options) {
     const names = (options && options.names) || ['出演者A','出演者B','出演者C','出演者D'];
-    const icon = (options && options.icon) || 'assets/icon.svg';
+    const icon = (options && options.icon !== undefined) ? options.icon : null; // Default to null instead of 'assets/icon.svg'
     const icons = (options && options.icons) || null; // per-index icons
     const numbersOnly = !!(options && options.numbersOnly);
     const textYOffset = (options && typeof options.textYOffset === 'number') ? options.textYOffset : (numbersOnly ? 15 : 45);
@@ -199,6 +227,17 @@
     const unit = (options && options.unit) || '%'; // Unit for display
     const minValue = (options && typeof options.minValue === 'number') ? options.minValue : 0;
     const maxValue = (options && typeof options.maxValue === 'number') ? options.maxValue : 100;
+    
+    // Calculate device count from visible indices
+    let deviceCount = 0;
+    if (visibleIndices !== null && Array.isArray(visibleIndices)) {
+      deviceCount = visibleIndices.length;
+    } else {
+      // If null, count non-empty values (including 0)
+      deviceCount = values.filter(v => v !== null && v !== undefined && !isNaN(v)).length;
+    }
+    // Ensure at least 1 device for rendering (to avoid division by zero)
+    if (deviceCount === 0) deviceCount = 1;
     
     // Helper function to convert normalized value (0-100%) to actual value based on min/max settings
     function denormalizeValue(percentage) {
@@ -225,10 +264,19 @@
         return;
       }
 
-      const laneIndex = index % LANE_OFFSETS.length;
+      // Map index to lane index based on visible indices
+      let laneIndex = 0;
+      if (visibleIndices !== null && Array.isArray(visibleIndices)) {
+        const positionInVisible = visibleIndices.indexOf(index);
+        laneIndex = positionInVisible >= 0 ? positionInVisible : 0;
+      } else {
+        // If no visible indices, use index directly (but limit to deviceCount)
+        laneIndex = index % deviceCount;
+      }
+      
       const numericVal = Number(val);
       const safeVal = Number.isFinite(numericVal) ? numericVal : 0;
-      const pos = calculateIconPosition(safeVal, laneIndex);
+      const pos = calculateIconPosition(safeVal, laneIndex, deviceCount);
 
       let g = svg.querySelector(`g[data-perf="${index}"]`);
       if (!g) {
@@ -250,15 +298,18 @@
         bgImage.setAttribute('height', '50');
         bgImage.setAttribute('mask', 'url(#maskIconCircle)');
 
-        // Foreground SVG icon (always shown on top)
-        const fgImage = document.createElementNS('http://www.w3.org/2000/svg', 'image');
-        fgImage.setAttributeNS('http://www.w3.org/1999/xlink', 'href', icon);
-        fgImage.setAttribute('href', icon);
-        fgImage.setAttribute('x', String(-25));
-        fgImage.setAttribute('y', String(-25));
-        fgImage.setAttribute('width', '50');
-        fgImage.setAttribute('height', '50');
-        fgImage.setAttribute('filter', 'url(#iconShadow)');
+        // Foreground SVG icon (only if icon is provided)
+        let fgImage = null;
+        if (icon) {
+          fgImage = document.createElementNS('http://www.w3.org/2000/svg', 'image');
+          fgImage.setAttributeNS('http://www.w3.org/1999/xlink', 'href', icon);
+          fgImage.setAttribute('href', icon);
+          fgImage.setAttribute('x', String(-25));
+          fgImage.setAttribute('y', String(-25));
+          fgImage.setAttribute('width', '50');
+          fgImage.setAttribute('height', '50');
+          fgImage.setAttribute('filter', 'url(#iconShadow)');
+        }
 
         // Machine-readable attributes for UI parsing
         const displayValue = actualValues && actualValues[index] !== undefined 
@@ -269,8 +320,12 @@
         g.setAttribute('data-actual', String(roundedDisplay));
         g.setAttribute('data-unit', unit);
 
-        // Append in order: background, foreground (no text)
-        g.append(bgImage, fgImage);
+        // Append in order: background, foreground (if exists)
+        if (fgImage) {
+          g.append(bgImage, fgImage);
+        } else {
+          g.append(bgImage);
+        }
         // Set initial transform (no animation on first paint)
         g.setAttribute('transform', `translate(${pos.x}, ${pos.y})`);
         svg.appendChild(g);
@@ -291,10 +346,11 @@
         g.setAttribute('data-unit', unit);
         // Update background user icon and foreground SVG icon
         const imgs = g.querySelectorAll('image');
-        // imgs[0] -> bg, imgs[1] -> fg
-        if (imgs && imgs.length >= 2) {
-          const bg = imgs[0];
-          const fg = imgs[1];
+        // imgs[0] -> bg, imgs[1] -> fg (if exists)
+        const bg = imgs[0];
+        const fg = imgs.length >= 2 ? imgs[1] : null;
+        
+        if (bg) {
           const desiredBg = (icons && icons[index]) ? icons[index] : '';
           if (desiredBg) {
             if (bg.getAttribute('href') !== desiredBg) {
@@ -308,9 +364,33 @@
               bg.removeAttributeNS('http://www.w3.org/1999/xlink', 'href');
             }
           }
-          if (fg.getAttribute('href') !== icon) {
-            fg.setAttributeNS('http://www.w3.org/1999/xlink', 'href', icon);
-            fg.setAttribute('href', icon);
+        }
+        
+        // Handle foreground icon
+        if (icon) {
+          // Icon should be shown
+          if (fg) {
+            // Update existing foreground icon
+            if (fg.getAttribute('href') !== icon) {
+              fg.setAttributeNS('http://www.w3.org/1999/xlink', 'href', icon);
+              fg.setAttribute('href', icon);
+            }
+          } else {
+            // Create new foreground icon
+            const newFg = document.createElementNS('http://www.w3.org/2000/svg', 'image');
+            newFg.setAttributeNS('http://www.w3.org/1999/xlink', 'href', icon);
+            newFg.setAttribute('href', icon);
+            newFg.setAttribute('x', String(-25));
+            newFg.setAttribute('y', String(-25));
+            newFg.setAttribute('width', '50');
+            newFg.setAttribute('height', '50');
+            newFg.setAttribute('filter', 'url(#iconShadow)');
+            g.appendChild(newFg);
+          }
+        } else {
+          // Icon should be hidden - remove foreground icon if it exists
+          if (fg) {
+            fg.remove();
           }
         }
         // Trigger transition by changing transform only

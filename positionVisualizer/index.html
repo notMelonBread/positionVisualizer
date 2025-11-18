@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>レバー角度ビジュアライザー</title>
+    <title>positionVisualizer</title>
     <link rel="stylesheet" href="css/style.css">
     <link rel="preload" href="assets/icon.svg" as="image" type="image/svg+xml">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
@@ -20,17 +20,18 @@
       })(document);
     </script>
     <style>
-      /* 最低限のフォールバック（css/style.css が無い場合でも表示が崩れないように） */
-      .container{display:flex;gap:16px;align-items:flex-start;justify-content:center;padding:16px}
-      .controls{width:320px;border:1px solid #ddd;padding:16px;border-radius:8px}
-      .visualizer{flex:1;min-width:360px;border:1px solid #ddd;padding:16px;border-radius:8px}
-      .meter-container{position:relative;width:100%;max-width:900px;margin:0 auto}
-      #icons-container{position:absolute;left:0;top:0;pointer-events:none}
-      .history-panel{width:320px;border:1px solid #ddd;padding:16px;border-radius:8px}
+      /* Fallback styles */
+      .container{display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start;justify-content:center;padding:0;max-width:100%;min-height:calc(100vh - 40px);margin:0 auto;}
+      .controls{flex:0 1 calc(50% - 10px);min-width:300px;max-width:500px;height:480px;border:1px solid #334155;padding:20px;border-radius:16px}
+      .visualizer{flex:1 1 calc(50% - 10px);min-width:300px;max-width:740px;height:480px;border:1px solid #334155;padding:24px;border-radius:16px;min-height:400px}
+      .range-settings-section{flex:0 1 calc(50% - 10px);min-width:300px;max-width:500px;border:1px solid #334155;padding:16px;border-radius:16px}
+      .log-sections{flex:1 1 calc(50% - 10px);min-width:300px;max-width:740px;border:1px solid #334155;padding:16px;border-radius:16px}
+      .meter-container{position:relative;width:100%;max-width:980px;margin:0 auto;aspect-ratio:16/9}
+      #icons-container{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none}
       button{cursor:pointer}
     </style>
     <script>
-      // キャッシュクリア用のビルドクエリ（簡易）
+      // キャッシュクリア用のビルドクエリ
       window.__buildTs = Date.now();
     </script>
 </head>
@@ -41,85 +42,64 @@
             <div class="mode-selector">
                 <label>
                     <input type="checkbox" id="mock-mode" unchecked="unchecked">
-                    <span>モックモード（デバイスなしで動作）</span>
+                    <span>テストモード</span>
                 </label>
             </div>
             <div class="device-inputs">
                 <div class="device-group">
-                    <label>デバイス1 <span class="ip-label">IP:</span></label>
-                    <!-- <input type="text" id="device1-ip" placeholder="例: 192.168.1.100" class="device-ip"> -->
-                    <input type="file" id="device1-icon" accept="image/*">
+                    <label>デバイス1</label>
+                    <label class="icon-file-button" for="device1-icon">
+                        <input type="file" id="device1-icon" accept="image/*" class="icon-file-input">
+                        <span class="icon-button-text">画像を選択</span>
+                    </label>
                 </div>
                 <div class="device-group">
-                    <label>デバイス2 <span class="ip-label">IP:</span></label>
-                    <!-- <input type="text" id="device2-ip" placeholder="例: 192.168.1.101" class="device-ip"> -->
-                    <input type="file" id="device2-icon" accept="image/*">
+                    <label>デバイス2</label>
+                    <label class="icon-file-button" for="device2-icon">
+                        <input type="file" id="device2-icon" accept="image/*" class="icon-file-input">
+                        <span class="icon-button-text">画像を選択</span>
+                    </label>
                 </div>
                 <div class="device-group">
-                    <label>デバイス3 <span class="ip-label">IP:</span></label>
-                    <!-- <input type="text" id="device3-ip" placeholder="例: 192.168.1.102" class="device-ip"> -->
-                    <input type="file" id="device3-icon" accept="image/*">
+                    <label>デバイス3</label>
+                    <label class="icon-file-button" for="device3-icon">
+                        <input type="file" id="device3-icon" accept="image/*" class="icon-file-input">
+                        <span class="icon-button-text">画像を選択</span>
+                    </label>
                 </div>
                 <div class="device-group">
-                    <label>デバイス4 <span class="ip-label">IP:</span></label>
-                    <!-- <input type="text" id="device4-ip" placeholder="例: 192.168.1.103" class="device-ip"> -->
-                    <input type="file" id="device4-icon" accept="image/*">
+                    <label>デバイス4</label>
+                    <label class="icon-file-button" for="device4-icon">
+                        <input type="file" id="device4-icon" accept="image/*" class="icon-file-input">
+                        <span class="icon-button-text">画像を選択</span>
+                    </label>
                 </div>
                 <div class="device-group">
-                    <label>デバイス5 <span class="ip-label">IP:</span></label>
-                    <!-- <input type="text" id="device5-ip" placeholder="例: 192.168.1.104" class="device-ip"> -->
-                    <input type="file" id="device5-icon" accept="image/*">
+                    <label>デバイス5</label>
+                    <label class="icon-file-button" for="device5-icon">
+                        <input type="file" id="device5-icon" accept="image/*" class="icon-file-input">
+                        <span class="icon-button-text">画像を選択</span>
+                    </label>
                 </div>
                 <div class="device-group">
-                    <label>デバイス6 <span class="ip-label">IP:</span></label>
-                    <!-- <input type="text" id="device6-ip" placeholder="例: 192.168.1.105" class="device-ip">                    <input type="file" id="device6-icon" accept="image/*"> -->
-                    <input type="file" id="device5-icon" accept="image/*">
+                    <label>デバイス6</label>
+                    <label class="icon-file-button" for="device6-icon">
+                        <input type="file" id="device6-icon" accept="image/*" class="icon-file-input">
+                        <span class="icon-button-text">画像を選択</span>
+                    </label>
                 </div>
             </div>
-            <div id="manual-controls" style="display:none;">
-                <h3>手動操作（モックモード時）</h3>
-                <div class="device-group">
-                    <label id="slider1-label">出演者1: <span id="slider1-value">20</span>%</label>
-                    <input type="range" id="slider1" min="0" max="100" value="20">
-                </div>
-                <div class="device-group">
-                    <label id="slider2-label">出演者2: <span id="slider2-value">45</span>%</label>
-                    <input type="range" id="slider2" min="0" max="100" value="45">
-                </div>
-                <div class="device-group">
-                    <label id="slider3-label">出演者3: <span id="slider3-value">75</span>%</label>
-                    <input type="range" id="slider3" min="0" max="100" value="75">
-                </div>
-                <div class="device-group">
-                    <label id="slider4-label">出演者4: <span id="slider4-value">45</span>%</label>
-                    <input type="range" id="slider4" min="0" max="100" value="45">
-                </div>
+        </div>
+
+        <div class="visualizer">
+            <h2 class="visualizer-title">プレビュー</h2>
+            <div class="meter-container" id="meter-container">
+                <div id="icons-container"></div>
             </div>
-            <div class="control-buttons">
-                <button id="start-btn">開始</button>
-                <button id="stop-btn">停止</button>
-                <button id="clear-history-btn">履歴クリア</button>
-            </div>
-            <div class="log-replay-section">
-                <label>ログ再生</label>
-                <input type="file" id="log-file" accept="application/json,.json">
-                <div class="log-replay-buttons">
-                    <button id="play-log">再生</button>
-                    <button id="stop-log">停止</button>
-                </div>
-            </div>
-            <div class="log-record-section">
-                <label>ログ記録</label>
-                <div class="log-record-status" id="log-record-status" style="font-size: 12px; color: #666; margin-bottom: 8px;">
-                    停止中
-                </div>
-                <div class="log-record-buttons">
-                    <button id="start-record">記録開始</button>
-                    <button id="stop-record">記録終了</button>
-                </div>
-            </div>
-            <div class="range-settings-section">
-                <h3>値の範囲設定</h3>
+        </div>
+        <div class="range-settings-section">
+            <h3>値の範囲設定</h3>
+            <div class="range-grid">
                 <div class="device-group">
                     <label>最小値</label>
                     <input type="number" id="min-value" value="0" step="0.1">
@@ -137,18 +117,47 @@
                 <span>更新間隔: <input type="number" id="poll-interval" value="200" min="50" max="1000" step="50"> ms</span>
             </div>
         </div>
-
-        <div class="visualizer">
-            <h2 class="visualizer-title">プレビュー</h2>
-            <div class="meter-container" id="meter-container">
-                <div id="icons-container"></div>
+        
+        <div class="log-sections">
+            <div class="log-replay-section">
+                <label>ログ再生</label>
+                <input type="file" id="log-file" accept="application/json,.json">
+                <div class="log-replay-buttons">
+                    <button id="play-log">再生</button>
+                    <button id="stop-log">停止</button>
+                </div>
+            </div>
+            <div class="log-record-section">
+                <label>ログ記録</label>
+                <div class="log-record-status" id="log-record-status">停止中</div>
+                <div class="log-record-buttons">
+                    <button id="start-record">記録開始</button>
+                    <button id="stop-record">記録終了</button>
+                </div>
             </div>
         </div>
 
-        <!-- <div class="history-panel">
-            <h3>数値変動履歴</h3>
-            <div id="history-content"></div>
-        </div> -->
+        <div id="manual-controls" style="display:none;">
+            <h3>手動操作（モックモード時）</h3>
+            <div class="manual-controls-grid">
+                <div class="device-group">
+                    <label id="slider1-label">出演者1: <span id="slider1-value">20</span>%</label>
+                    <input type="range" id="slider1" min="0" max="100" value="20">
+                </div>
+                <div class="device-group">
+                    <label id="slider2-label">出演者2: <span id="slider2-value">45</span>%</label>
+                    <input type="range" id="slider2" min="0" max="100" value="45">
+                </div>
+                <div class="device-group">
+                    <label id="slider3-label">出演者3: <span id="slider3-value">75</span>%</label>
+                    <input type="range" id="slider3" min="0" max="100" value="75">
+                </div>
+                <div class="device-group">
+                    <label id="slider4-label">出演者4: <span id="slider4-value">45</span>%</label>
+                    <input type="range" id="slider4" min="0" max="100" value="45">
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>window.USE_MVVM = true;</script>

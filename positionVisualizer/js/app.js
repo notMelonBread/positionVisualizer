@@ -118,10 +118,16 @@
           (!window.MVVM.Bindings ? 'Bindings' : ''));
       }
 
-      // Now initialize
+      // Clear localStorage to avoid stale state
+      try {
+        localStorage.removeItem('meter-state');
+        localStorage.removeItem('meter-svg');
+      } catch(e) {}
+      
+      // Now initialize with empty state
       const { MeterState, MeterViewModel, Bindings } = window.MVVM;
       const initial = new MeterState(
-        [],
+        [], // Empty values - no default values
         [
           document.getElementById('device1-name')?.value || '',
           document.getElementById('device2-name')?.value || '',
@@ -130,7 +136,7 @@
           document.getElementById('device5-name')?.value || '',
           document.getElementById('device6-name')?.value || ''
         ],
-        'assets/icon.svg'
+        null // No default icon
       );
       const vm = new MeterViewModel(initial);
 

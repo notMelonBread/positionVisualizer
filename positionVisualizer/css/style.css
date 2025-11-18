@@ -15,21 +15,56 @@ body {
 
 .container {
   padding: 0;
-  display: block;
-  max-width: 1600px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  max-width: 1400px;
+  width: 100%;
   margin: 0 auto;
+  min-height: calc(100vh - 40px);
+  align-items: flex-start;
+  align-content: flex-start;
+}
+
+/* 上段左: デバイス設定 */
+.controls {
+  flex: 0 0 calc(50% - 10px);
+  min-width: 300px;
+  max-width: 500px;
+}
+
+/* 上段右: プレビュー */
+.visualizer {
+  flex: 0 0 calc(50% - 10px);
+  min-width: 300px;
+}
+
+.range-settings-section {
+  flex: 0 0 calc(50% - 10px);
+  min-width: 300px;
+  max-width: 500px;
+}
+
+.log-sections {
+  flex: 0 0 calc(50% - 10px);
+  min-width: 300px;
 }
 
 /* コントロールパネルと履歴パネル */
 .controls,
 .history-panel {
-  width: 360px;
+  width: 100%;
   background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
   border: 1px solid #334155;
-  padding: 24px;
+  padding: 20px;
   border-radius: 16px;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.05);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 
 .controls:hover,
@@ -59,13 +94,15 @@ body {
 
 /* ビジュアライザー */
 .visualizer {
-  flex: 1;
-  min-width: 400px;
   background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
   border: 1px solid #334155;
   padding: 24px;
   border-radius: 16px;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 400px;
 }
 
 .meter-container {
@@ -151,17 +188,21 @@ body {
 /* デバイス入力 */
 .device-inputs {
   margin-bottom: 20px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.device-group label {
+  font-size: 13px;
+  margin-bottom: 4px;
 }
 
 .device-group {
   display: flex;
   flex-direction: column;
-  margin-bottom: 16px;
-  gap: 8px;
-}
-
-.device-group:last-child {
   margin-bottom: 0;
+  gap: 8px;
 }
 
 .device-group label {
@@ -179,53 +220,46 @@ body {
   font-weight: 400;
 }
 
-.device-group input[type="text"] {
-  margin-top: 0;
-  padding: 10px 12px;
-  border-radius: 8px;
-  border: 1px solid #334155;
-  background: #0b1220;
-  color: #e5e7eb;
-  font-size: 14px;
-  font-weight: 400;
-  transition: all 0.2s ease;
-  font-family: inherit;
-}
-
-.device-group input[type="text"]:focus {
-  outline: none;
-  border-color: #5FADCF;
-  background: #0f172a;
-  box-shadow: 0 0 0 3px rgba(95, 173, 207, 0.1);
-}
-
-.device-group input[type="text"]:hover {
-  border-color: #475569;
-}
-
-.device-group input[type="text"]::placeholder {
-  color: #64748b;
-}
 
 /* 手動操作セクション */
 #manual-controls {
-  margin-top: 20px;
+  flex: 1 1 100%;
   padding: 16px;
-  background: rgba(15, 23, 42, 0.5);
-  border-radius: 12px;
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
   border: 1px solid #334155;
+  border-radius: 16px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  margin-top: 0;
+}
+
+.manual-controls-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  margin-top: 12px;
 }
 
 /* 値の範囲設定セクション */
 .range-settings-section {
-  margin-top: 20px;
   padding: 16px;
-  background: rgba(15, 23, 42, 0.5);
-  border-radius: 12px;
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
   border: 1px solid #334155;
+  border-radius: 16px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-width: 0;
+}
+
+.range-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-top: 12px;
 }
 
 .range-settings-section h3 {
+  grid-column: 1 / -1;
   margin: 0 0 16px 0;
   font-size: 16px;
   color: #cbd5e1;
@@ -281,11 +315,23 @@ body {
 
 /* ログ再生セクション */
 .log-replay-section {
-  margin-top: 20px;
+  padding: 0;
+  background: transparent;
+  border: none;
+}
+
+.log-sections {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
   padding: 16px;
-  background: rgba(15, 23, 42, 0.5);
-  border-radius: 12px;
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
   border: 1px solid #334155;
+  border-radius: 16px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-width: 0;
 }
 
 .log-replay-section label,
@@ -309,11 +355,15 @@ body {
 
 /* ログ記録セクション */
 .log-record-section {
-  margin-top: 20px;
-  padding: 16px;
-  background: rgba(15, 23, 42, 0.5);
-  border-radius: 12px;
-  border: 1px solid #334155;
+  padding: 0;
+  background: transparent;
+  border: none;
+}
+
+.log-record-status {
+  font-size: 12px;
+  color: #94a3b8;
+  margin-bottom: 8px;
 }
 
 .log-record-buttons {
@@ -327,10 +377,6 @@ body {
 }
 
 #manual-controls .device-group {
-  margin-bottom: 20px;
-}
-
-#manual-controls .device-group:last-child {
   margin-bottom: 0;
 }
 
@@ -452,7 +498,7 @@ button:disabled:hover {
 
 /* ステータス */
 .status {
-  margin-top: 20px;
+  margin-top: 16px;
   padding: 12px;
   background: rgba(15, 23, 42, 0.5);
   border-radius: 8px;
@@ -485,8 +531,67 @@ button:disabled:hover {
   box-shadow: 0 0 0 3px rgba(95, 173, 207, 0.1);
 }
 
-/* ファイル入力 */
-.device-group input[type="file"],
+/* アイコンファイル入力（ボタンのみ） */
+.icon-file-button {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 36px;
+  cursor: pointer;
+}
+
+.icon-file-input {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 1;
+}
+
+.icon-button-text {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 2px solid #334155;
+  background: linear-gradient(135deg, #334155 0%, #475569 100%);
+  color: #cbd5e1;
+  font-size: 12px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.icon-file-button:hover .icon-button-text {
+  background: linear-gradient(135deg, #475569 0%, #64748b 100%);
+  color: #f1f5f9;
+  border-color: #475569;
+}
+
+.icon-file-input:focus + .icon-button-text {
+  outline: none;
+  border-color: #5FADCF;
+  box-shadow: 0 0 0 3px rgba(95, 173, 207, 0.1);
+}
+
+/* 登録済み状態（アイコンが設定されている場合） */
+.icon-file-button.has-icon .icon-button-text {
+  border-color: #5FADCF;
+  background: linear-gradient(135deg, #5FADCF 0%, #4a8fb8 100%);
+  color: #fff;
+}
+
+.icon-file-button.has-icon:hover .icon-button-text {
+  background: linear-gradient(135deg, #7F57B8 0%, #5FADCF 100%);
+  border-color: #7F57B8;
+}
+
+/* ログ再生のファイル入力 */
 .log-replay-section input[type="file"] {
   margin-top: 8px;
   padding: 10px 12px;
@@ -502,21 +607,17 @@ button:disabled:hover {
   width: 100%;
 }
 
-.device-group input[type="file"]:hover,
 .log-replay-section input[type="file"]:hover {
   border-color: #475569;
   background: #0f172a;
 }
 
-.device-group input[type="file"]:focus,
 .log-replay-section input[type="file"]:focus {
   outline: none;
   border-color: #5FADCF;
   box-shadow: 0 0 0 3px rgba(95, 173, 207, 0.1);
 }
 
-/* ファイル入力のラベル部分のスタイル（統一） */
-.device-group input[type="file"]::file-selector-button,
 .log-replay-section input[type="file"]::file-selector-button {
   background: linear-gradient(135deg, #5FADCF 0%, #4a8fb8 100%);
   border: none;
@@ -531,16 +632,10 @@ button:disabled:hover {
   font-family: inherit;
 }
 
-.device-group input[type="file"]::file-selector-button:hover,
 .log-replay-section input[type="file"]::file-selector-button:hover {
   background: linear-gradient(135deg, #7F57B8 0%, #5FADCF 100%);
   transform: translateY(-1px);
   box-shadow: 0 2px 4px rgba(127, 87, 184, 0.3);
-}
-
-.device-group input[type="file"]::file-selector-button:active,
-.log-replay-section input[type="file"]::file-selector-button:active {
-  transform: translateY(0);
 }
 
 /* 履歴パネル */
@@ -591,20 +686,37 @@ button:disabled:hover {
   border-color: #5FADCF;
 }
 
+/* スクロールバーのスタイル */
+.controls::-webkit-scrollbar {
+  width: 8px;
+}
+
+.controls::-webkit-scrollbar-track {
+  background: #0f172a;
+  border-radius: 4px;
+}
+
+.controls::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 4px;
+}
+
+.controls::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
 /* レスポンシブデザイン */
-@media (max-width: 1400px) {
-  .container {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
+@media (max-width: 1200px) {
   .controls,
-  .history-panel {
-    width: 100%;
+  .visualizer,
+  .range-settings-section,
+  .log-sections {
+    flex: 1 1 100%;
+    max-width: 100%;
   }
-
-  .visualizer {
-    min-width: 100%;
+  
+  .log-sections {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -618,16 +730,22 @@ button:disabled:hover {
   }
 
   .controls,
+  .visualizer,
+  .range-settings-section,
+  .log-sections {
+    min-width: 100%;
+  }
+
   .history-panel,
   .visualizer {
     padding: 16px;
   }
 
-  .control-buttons {
-    flex-direction: column;
-  }
-
   button {
     width: 100%;
+  }
+  
+  .range-grid {
+    grid-template-columns: 1fr;
   }
 }

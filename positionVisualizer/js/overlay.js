@@ -129,9 +129,15 @@
           (!window.MVVM.Bindings ? 'Bindings' : ''));
       }
 
-      // Now initialize MVVM mode
+      // Clear localStorage to avoid stale state
+      try {
+        localStorage.removeItem('meter-state');
+        localStorage.removeItem('meter-svg');
+      } catch(e) {}
+      
+      // Now initialize MVVM mode with empty state
       const { MeterState, MeterViewModel, Bindings } = window.MVVM;
-      const vm = new MeterViewModel(new MeterState([20,45,75,45], ['','','',''], 'assets/icon.svg'));
+      const vm = new MeterViewModel(new MeterState([], ['','','',''], null));
       const binding = new Bindings.OverlayBinding(vm);
       binding.attach();
     } catch (error) {
@@ -143,7 +149,7 @@
 
   function initializeLegacy() {
   const url = new URL(window.location.href);
-  const icon = url.searchParams.get('icon') || 'assets/icon.svg';
+  const icon = url.searchParams.get('icon') || null; // Default to null instead of 'assets/icon.svg'
   const namesParam = url.searchParams.get('names');
   let names = ['出演者1','出演者2','出演者3','出演者4'];
   if (namesParam) {
@@ -154,9 +160,15 @@
   }
 
   function init() {
+    // Clear localStorage to avoid stale state
+    try {
+      localStorage.removeItem('meter-state');
+      localStorage.removeItem('meter-svg');
+    } catch(e) {}
+    
     MeterRenderer.initMeter(document.getElementById('meter-container'));
-    // initial placeholder
-    MeterRenderer.updateMeter([20,45,75,45], { names: ['','','',''], icon, numbersOnly: true, textYOffset: 15 });
+    // initial placeholder - empty state, no icon by default
+    MeterRenderer.updateMeter([], { names: ['','','',''], icon: null, numbersOnly: true, textYOffset: 15 });
     // Also try to load the last known state from localStorage
     readFromLocalStorage();
   }

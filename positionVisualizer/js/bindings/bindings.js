@@ -98,7 +98,24 @@
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          // Handle device data JSON
+          // Handle state messages from bridge-server.js (same format as OverlayBinding)
+          if (data.type === 'state' && data.payload) {
+            const payload = data.payload;
+            if (payload.values && Array.isArray(payload.values)) {
+              // Update values from state payload
+              for (let i = 0; i < 6; i++) {
+                const value = payload.values[i];
+                if (value !== null && value !== undefined) {
+                  // Value is already normalized (0-100) from bridge-server
+                  self.vm.setValue(i, value, true, true); // Enable smooth interpolation, value is normalized
+                } else {
+                  self.vm.setValue(i, null, false);
+                }
+              }
+            }
+            return;
+          }
+          // Handle device data JSON (legacy format)
           if (data.device_id && data.data) {
             self._processDeviceData(data);
           }
@@ -135,59 +152,18 @@
         ws.send(JSON.stringify({ type: 'state', payload: { ...s, svg: svgMarkup } }));
       }
     } catch(_) {}
-    // HTTP fallback (optional)
-    try {
-      const payload = { ...s, svg: svgMarkup };
-      fetch('http://127.0.0.1:8123/state', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-        cache: 'no-store',
-        keepalive: true
-      }).catch(()=>{});
-    } catch(_) {}
   };
-  MonitorBinding.prototype.getVisibleIndices = function(){
-    // In mock mode: show all → return null (no filtering)
-    // In non-mock mode: show only devices with IP addresses OR devices that have received data
-    const mockMode = this.vm.mockMode;
-    if (mockMode) return null;
-    
-    const visibleIndices = [];
-    const activeDevices = new Set();
-    
-    // First, collect devices with IP addresses
-    for (let i = 0; i < 6; i++) {
-      const ipEl = document.getElementById(`device${i+1}-ip`);
-      const ip = ipEl ? ipEl.value.trim() : '';
-      if (ip) {
-        activeDevices.add(i);
-      }
-    }
-    
-    // Also include devices that have received data (have non-null values, including 0)
-    const state = this.vm.state;
-    for (let i = 0; i < 6; i++) {
-      const value = state.values[i];
-      if (value !== null && value !== undefined && !isNaN(value)) {
-        activeDevices.add(i);
-      }
-    }
-    
-    // Convert to sorted array
-    const indices = Array.from(activeDevices).sort((a, b) => a - b);
-    return indices.length > 0 ? indices : null;
+  MonitorBinding.prototype.getConnectedDeviceIndices = function(){
+    // Show only devices that have received data
+    // Use ViewModel's method to get connected device indices
+    return this.vm.getConnectedDeviceIndices();
   };
 
   // Start WebSocket connection for device data (replaces HTTP polling)
   MonitorBinding.prototype._startPolling = function() {
-    const vm = this.vm;
-    
     // Clear any existing polling timers (for compatibility)
     this._pollTimers.forEach(timer => clearInterval(timer));
     this._pollTimers = [];
-    
-    if (vm.mockMode) return; // Don't connect WebSocket in mock mode
     
     // Establish WebSocket connection - data will arrive via onmessage handler
     // The _ensureWs() method already sets up the message handler that calls _processDeviceData
@@ -205,7 +181,7 @@
     const originalStop = vm.stop;
     vm.start = function() {
       originalStart.call(this);
-      if (!this.mockMode) {
+      if (this.running) {
         self._startPolling();
       }
     };
@@ -216,31 +192,31 @@
       self._pollTimers = [];
     };
     
-    // Restart polling when interval or mock mode changes
+    // Restart polling when interval changes
     vm.onChange(() => {
-      if (!vm.mockMode && vm.running) {
+      if (vm.running) {
         self._startPolling();
       } else {
-        // Stop polling if mock mode or not running
+        // Stop polling if not running
         self._pollTimers.forEach(timer => clearInterval(timer));
         self._pollTimers = [];
       }
     });
     
     // Start polling if already running
-    if (vm.running && !vm.mockMode) {
+    if (vm.running) {
       this._startPolling();
     }
     
     vm.onChange((state) => {
-      const visibleIndices = this.getVisibleIndices();
+      const connectedDeviceIndices = this.getConnectedDeviceIndices();
       const actualValues = vm.getActualValues();
       MeterRenderer.updateMeter(state.values, { 
         names: state.names, 
         icon: state.icon, 
         numbersOnly: true, 
         textYOffset: 15,
-        visibleIndices: visibleIndices,
+        connectedDeviceIndices: connectedDeviceIndices,
         actualValues: actualValues,
         unit: vm.unit,
         minValue: vm.minValue,
@@ -248,40 +224,16 @@
         icons: vm.state.icons
       });
       this.broadcast();
-      ['slider1-value','slider2-value','slider3-value','slider4-value'].forEach((id, idx) => {
-        const el = document.getElementById(id); 
-        if (el) {
-          const actualValue = vm.getActualValue(idx);
-          const unit = vm.unit || '%';
-          const rounded = Math.round(actualValue);
-          el.textContent = String(rounded) + unit;
-          // Machine-readable attributes for UI parsing
-          el.setAttribute('data-actual', String(rounded));
-          el.setAttribute('data-unit', unit);
-        }
-      });
-      [['slider1-label',0],['slider2-label',1],['slider3-label',2],['slider4-label',3]].forEach(([id,i])=>{ 
-        const lab = document.getElementById(id);
-        if (lab && lab.childNodes && lab.childNodes.length>0) {
-          const unit = vm.unit || '%';
-          lab.childNodes[0].nodeValue = `${state.names[i]}: `;
-          // Update unit in the value span's parent
-          const valueSpan = lab.querySelector('span');
-          if (valueSpan && lab.childNodes.length > 1) {
-            // Value span already exists, update it
-          }
-        }
-      });
     });
     // initial paint
-    const initialVisibleIndices = this.getVisibleIndices();
+    const initialConnectedDeviceIndices = this.getConnectedDeviceIndices();
     const initialActualValues = vm.getActualValues();
     MeterRenderer.updateMeter(vm.state.values, { 
       names: vm.state.names, 
       icon: vm.state.icon, 
       numbersOnly: true, 
       textYOffset: 15,
-      visibleIndices: initialVisibleIndices,
+      connectedDeviceIndices: initialConnectedDeviceIndices,
       actualValues: initialActualValues,
       unit: vm.unit,
       minValue: vm.minValue,
@@ -328,16 +280,7 @@
     try {
       MeterRenderer.initMeter(container);
       // Start with empty state - no default values
-      MeterRenderer.updateMeter([], { 
-        names: ['','','',''], 
-        icon: null, 
-        numbersOnly: true, 
-        textYOffset: 15,
-        unit: this.vm.unit || '%',
-        minValue: this.vm.minValue || 0,
-        maxValue: this.vm.maxValue || 100,
-        visibleIndices: null // Will be calculated dynamically
-      });
+      MeterRenderer.updateMeter([], { icon: null });
       initialized = !!container.querySelector('svg[data-meter]');
       
       // Initialize iconRenderer for overlay
@@ -473,25 +416,59 @@
         return;
       }
       if (payload && Array.isArray(payload.values)) {
-        const usedIcon = payload.icon || 'assets/icon.svg';
-        MeterRenderer.updateMeter(payload.values.slice(0,4), { 
-          names: ['','','',''], 
-          icon: usedIcon, 
-          numbersOnly: true, 
-          textYOffset: 15,
-          unit: payload.unit || this.vm.unit || '%',
-          minValue: payload.minValue !== undefined ? payload.minValue : (this.vm.minValue || 0),
-          maxValue: payload.maxValue !== undefined ? payload.maxValue : (this.vm.maxValue || 100)
-        });
-        initialized = true;
-        // Update icon values
-        if (window.IconRenderer && window.IconRenderer.updateAllIconValues) {
-          setTimeout(() => {
-            window.IconRenderer.updateAllIconValues();
-          }, 50);
+        // Update ViewModel with smooth interpolation enabled
+        const values = payload.values;
+        for (let i = 0; i < 6; i++) {
+          const value = values[i];
+          if (value !== null && value !== undefined) {
+            // Value is already normalized (0-100), so pass isNormalized=true
+            this.vm.setValue(i, value, true, true); // Enable smooth interpolation, value is normalized
+          } else {
+            this.vm.setValue(i, null, false); // No interpolation for null values
+          }
         }
+        
+        // Update other state properties
+        if (payload.icon !== undefined) {
+          this.vm.setIcon(payload.icon);
+        }
+        if (payload.unit !== undefined) {
+          this.vm.setUnit(payload.unit);
+        }
+        if (payload.minValue !== undefined) {
+          this.vm.setMinValue(payload.minValue);
+        }
+        if (payload.maxValue !== undefined) {
+          this.vm.setMaxValue(payload.maxValue);
+        }
+        
+        initialized = true;
       }
     };
+    
+    // Listen to ViewModel changes to update renderer
+    this.vm.onChange((state) => {
+      const connectedDeviceIndices = this.vm.getConnectedDeviceIndices();
+      const actualValues = this.vm.getActualValues();
+      MeterRenderer.updateMeter(state.values, { 
+        names: state.names, 
+        icon: state.icon, 
+        numbersOnly: true, 
+        textYOffset: 15,
+        connectedDeviceIndices: connectedDeviceIndices,
+        actualValues: actualValues,
+        unit: this.vm.unit,
+        minValue: this.vm.minValue,
+        maxValue: this.vm.maxValue,
+        icons: state.icons
+      });
+      // Update icon values
+      if (window.IconRenderer && window.IconRenderer.updateAllIconValues) {
+        setTimeout(() => {
+          window.IconRenderer.updateAllIconValues();
+        }, 50);
+      }
+    });
     this._ensureWs(onWsState);
 
     // Bridge polling (OBS/browser-source safe) as a fallback
@@ -544,86 +521,47 @@
       }
     }
 
-    // Bind mock mode toggle
-    const mockToggle = document.getElementById('mock-mode');
-    const manualBox = document.getElementById('manual-controls');
-    if (mockToggle) {
-      vm.setMockMode(mockToggle.checked);
-      if (manualBox) {
-        manualBox.style.display = mockToggle.checked ? '' : 'none';
-      }
-      mockToggle.addEventListener('change', () => {
-        vm.setMockMode(mockToggle.checked);
-        if (manualBox) {
-          manualBox.style.display = mockToggle.checked ? '' : 'none';
-        }
-        if (mockToggle.checked) vm.stop();
-        vm._notify();
-      });
-      // Initialize with dummy values if mock mode
-      if (mockToggle.checked) {
-        [20, 45, 75, 45].forEach((v, i) => vm.setValue(i, v));
-      }
-    }
-
     // Bind IP address inputs (for visibility updates)
     for (let i = 1; i <= 6; i++) {
       const el = document.getElementById(`device${i}-ip`);
       if (el) {
         const handler = () => {
-          if (!vm.mockMode) vm._notify();
+          vm._notify();
         };
         el.addEventListener('input', handler);
         el.addEventListener('change', handler);
       }
     }
 
-    // Bind poll interval
-    const pollInput = document.getElementById('poll-interval');
-    if (pollInput) {
-      pollInput.addEventListener('change', () => {
-        vm.setPollInterval(pollInput.value);
-      });
-    }
+    // Poll interval is fixed at 100ms - no UI binding needed
+    // const pollInput = document.getElementById('poll-interval');
+    // if (pollInput) {
+    //   pollInput.addEventListener('change', () => {
+    //     vm.setPollInterval(pollInput.value);
+    //   });
+    // }
 
     // Bind range settings
     const minValueInput = document.getElementById('min-value');
     const maxValueInput = document.getElementById('max-value');
     const unitInput = document.getElementById('value-unit');
     
-    const updateSliderRanges = () => {
-      for (let i = 1; i <= 4; i++) {
-        const el = document.getElementById(`slider${i}`);
-        if (el) {
-          el.min = vm.minValue;
-          el.max = vm.maxValue;
-          el.step = (vm.maxValue - vm.minValue) / 1000;
-          const currentActual = vm.getActualValue(i - 1);
-          const clamped = Math.max(vm.minValue, Math.min(vm.maxValue, currentActual));
-          vm.setValue(i - 1, clamped);
-        }
-      }
-    };
 
     if (minValueInput) {
       minValueInput.addEventListener('change', () => {
         vm.setMinValue(minValueInput.value);
-        updateSliderRanges();
       });
       minValueInput.addEventListener('input', () => {
         vm.setMinValue(minValueInput.value);
-        updateSliderRanges();
       });
     }
 
     if (maxValueInput) {
       maxValueInput.addEventListener('change', () => {
         vm.setMaxValue(maxValueInput.value);
-        updateSliderRanges();
       });
       maxValueInput.addEventListener('input', () => {
         vm.setMaxValue(maxValueInput.value);
-        updateSliderRanges();
       });
     }
 
@@ -682,24 +620,9 @@
       }
     }
 
-    // Bind sliders
-    for (let i = 1; i <= 4; i++) {
-      const el = document.getElementById(`slider${i}`);
-      if (el) {
-        el.addEventListener('input', (e) => {
-          const actualValue = Number(e.target.value);
-          vm.setValue(i - 1, actualValue);
-        });
-        // Initialize slider value
-        const actualValue = vm.getActualValue(i - 1);
-        el.value = actualValue;
-      }
-    }
-    updateSliderRanges();
-
     // Bind history updates
     vm.onChange((state) => {
-      if (vm.running && !vm.mockMode) {
+      if (vm.running) {
         const el = document.getElementById('history-content');
         if (el) {
           const row = document.createElement('div');
@@ -737,7 +660,6 @@
               alert('読み込み失敗: ' + err.message);
               return;
             }
-            vm.setMockMode(true);
             this.replayController.play();
           });
         });

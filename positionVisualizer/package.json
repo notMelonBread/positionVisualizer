@@ -2,7 +2,7 @@
   "name": "deepgoodlever",
   "version": "1.0.0",
   "description": "ESP8266（NodeMCU）でロータリーエンコーダの値を0–100に正規化して表示・配信し、Windows 等のPCで Python を使ってリアルタイム可視化（円/棒グラフ）する最小構成。",
-  "main": "bridge-server.js",
+  "main": "tools/bridge-server.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -19,6 +19,7 @@
   },
   "homepage": "https://github.com/notMelonBread/positionVisualizer#readme",
   "dependencies": {
-    "ws": "^8.18.3"
+    "ws": "^8.18.3",
+    "socket.io-client": "^4.7.5"
   }
 }

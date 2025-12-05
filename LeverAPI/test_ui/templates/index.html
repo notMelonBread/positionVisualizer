@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>[テスト用] PedanticLeverController</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.7.0/dist/chart.min.js"></script>
+    <script src="https://cdn.socket.io/4.4.1/socket.io.min.js"></script>
+    <style>
+        .test-banner {
+            background-color: #ff6b6b;
+            color: white;
+            text-align: center;
+            padding: 10px;
+            font-weight: bold;
+            margin-bottom: 20px;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="test-banner">
+            これはテスト用UIです。本番環境では使用しないでください。
+        </div>
+        <header>
+            <h1>Pedantic Lever Controller - テスト用UI</h1>
+            <div class="controls">
+                <button id="scanButton" class="button primary">デバイススキャン</button>
+                <span id="scanStatus" class="status"></span>
+            </div>
+        </header>
+
+        <div class="dashboard">
+            <div class="panel device-panel">
+                <h2>検出デバイス</h2>
+                <div class="device-list" id="deviceList">
+                    <p class="placeholder">デバイスが見つかりません</p>
+                    <!-- デバイスリストがここに動的に追加されます -->
+                </div>
+            </div>
+
+            <div class="panel value-panel">
+                <h2>レバー値</h2>
+                <div class="values-container">
+                    <div class="chart-container">
+                        <canvas id="leverChart"></canvas>
+                    </div>
+                    <div class="current-values" id="currentValues">
+                        <!-- 現在値がここに動的に追加されます -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="deviceDetails" class="panel device-details">
+            <h2>デバイス詳細</h2>
+            <div class="details-content">
+                <p class="placeholder">デバイスを選択してください</p>
+                <!-- デバイス詳細がここに動的に追加されます -->
+            </div>
+        </div>
+
+        <div id="modal" class="modal">
+            <div class="modal-content">
+                <span class="close">&times;</span>
+                <h2>デバイス名の変更</h2>
+                <form id="renameForm">
+                    <div class="form-group">
+                        <label for="deviceName">新しい名前：</label>
+                        <input type="text" id="deviceName" name="deviceName" required>
+                    </div>
+                    <input type="hidden" id="deviceId" name="deviceId">
+                    <button type="submit" class="button primary">保存</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <p>【テスト環境】 &copy; 2023 Pedantic Co., Ltd. All rights reserved.</p>
+    </footer>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

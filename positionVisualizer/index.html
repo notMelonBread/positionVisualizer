@@ -39,12 +39,6 @@
     <div class="container">
         <div class="controls">
             <h2>デバイス設定</h2>
-            <div class="mode-selector">
-                <label>
-                    <input type="checkbox" id="mock-mode" unchecked="unchecked">
-                    <span>テストモード</span>
-                </label>
-            </div>
             <div class="device-inputs">
                 <div class="device-group">
                     <label>デバイス1</label>
@@ -114,7 +108,7 @@
                 </div>
             </div>
             <div class="status">
-                <span>更新間隔: <input type="number" id="poll-interval" value="200" min="50" max="1000" step="50"> ms</span>
+                <span>更新間隔: <input type="number" id="poll-interval" value="100" disabled readonly> ms (固定)</span>
             </div>
         </div>
         
@@ -133,28 +127,6 @@
                 <div class="log-record-buttons">
                     <button id="start-record">記録開始</button>
                     <button id="stop-record">記録終了</button>
-                </div>
-            </div>
-        </div>
-
-        <div id="manual-controls" style="display:none;">
-            <h3>手動操作（モックモード時）</h3>
-            <div class="manual-controls-grid">
-                <div class="device-group">
-                    <label id="slider1-label">出演者1: <span id="slider1-value">20</span>%</label>
-                    <input type="range" id="slider1" min="0" max="100" value="20">
-                </div>
-                <div class="device-group">
-                    <label id="slider2-label">出演者2: <span id="slider2-value">45</span>%</label>
-                    <input type="range" id="slider2" min="0" max="100" value="45">
-                </div>
-                <div class="device-group">
-                    <label id="slider3-label">出演者3: <span id="slider3-value">75</span>%</label>
-                    <input type="range" id="slider3" min="0" max="100" value="75">
-                </div>
-                <div class="device-group">
-                    <label id="slider4-label">出演者4: <span id="slider4-value">45</span>%</label>
-                    <input type="range" id="slider4" min="0" max="100" value="45">
                 </div>
             </div>
         </div>

@@ -6,9 +6,9 @@
     let timer = null;
     let frameIndex = 0;
     let intervalMs = 200;
-    let interpolationTimer = null;
     let playbackStartTime = null;
     let isPlaying = false;
+    let animationFrameId = null;
     
     // Recording functionality
     let isRecording = false;
@@ -44,16 +44,21 @@
       const sortedTs = Array.from(byTs.keys()).sort((a,b)=>a-b);
       intervalMs = inferInterval(sortedTs.map(ts=>({ts})));
       
-      // Create sorted list of device IDs (up to 4 devices)
-      // idList[0] = device 1, idList[1] = device 2, etc.
-      const idList = Array.from(ids).sort((a,b)=>a-b).slice(0,4);
+      // Create sorted list of device IDs (up to 6 devices)
+      // Map device ID to index: id 1 -> index 0, id 2 -> index 1, etc.
+      const idList = Array.from(ids).sort((a,b)=>a-b).slice(0,6);
+      const idToIndexMap = new Map(); // Map<deviceId, index>
+      idList.forEach((id, idx) => {
+        idToIndexMap.set(id, idx);
+      });
       
       // Normalize timestamps to start from 0 (relative time)
       const firstTs = sortedTs.length > 0 ? sortedTs[0] : 0;
       
       // Build frames with carry-forward values for smooth playback
-      // Each frame contains values array: [device1_value, device2_value, device3_value, device4_value]
-      const lastVals = new Map(); // Track last known value for each device
+      // Each frame contains values array: [device1_value, device2_value, ..., device6_value]
+      // Values for devices not in log are set to null
+      const lastVals = new Map(); // Track last known value for each device ID
       frames = sortedTs.map(ts=>{
         const m = byTs.get(ts);
         // Update last known values for devices that have new data at this timestamp
@@ -62,13 +67,17 @@
         });
         
         // Build values array: index i corresponds to device idList[i]
-        const values = [0,0,0,0];
+        // Initialize with null for all 6 slots
+        const values = [null, null, null, null, null, null];
         for (let i=0;i<idList.length;i++) {
-          values[i] = lastVals.has(idList[i]) ? lastVals.get(idList[i]) : 0;
+          const deviceId = idList[i];
+          if (lastVals.has(deviceId)) {
+            values[i] = lastVals.get(deviceId);
+          }
         }
         
         // Normalize timestamp to relative time (start from 0)
-        return { ts: ts - firstTs, values };
+        return { ts: ts - firstTs, values, idList }; // Store idList for reference
       });
     }
 
@@ -89,95 +98,90 @@
 
     function stop(){ 
       if (timer) { clearInterval(timer); timer = null; }
-      if (interpolationTimer) { clearInterval(interpolationTimer); interpolationTimer = null; }
+      if (animationFrameId !== null) {
+        cancelAnimationFrame(animationFrameId);
+        animationFrameId = null;
+      }
       isPlaying = false;
       playbackStartTime = null;
+      // Note: ViewModel's interpolation will continue until completion
+      // This ensures smooth animation even when stopping playback
     }
 
     function play(){
       if (!frames.length) return;
-      vm.stop(); // stop VM timers
+      vm.stop(); // stop VM timers (this will also stop interpolation animations)
       stop(); // Clear any existing timers
       
       frameIndex = 0;
       playbackStartTime = Date.now();
       isPlaying = true;
       
-      // Use interpolation for smooth playback
-      const interpolationInterval = 50; // Update every 50ms for smooth animation
+      // Use requestAnimationFrame for smooth playback with ViewModel interpolation
+      // Update at frame rate, but only when frame timestamps change
+      let lastFrameIndex = -1;
       
-      const interpolate = () => {
-        if (!isPlaying || frames.length === 0) return;
+      const updateFrame = () => {
+        if (!isPlaying || frames.length === 0) {
+          animationFrameId = null;
+          return;
+        }
         
         const currentTime = Date.now() - playbackStartTime;
         
-        // Find current and next frame
-        let currentFrame = null;
-        let nextFrame = null;
-        
         // Find the frame that should be playing now
+        let currentFrameIndex = -1;
         for (let i = 0; i < frames.length; i++) {
           if (frames[i].ts <= currentTime) {
-            currentFrame = frames[i];
-            if (i < frames.length - 1) {
-              nextFrame = frames[i + 1];
-            }
+            currentFrameIndex = i;
           } else {
             break;
           }
         }
         
         // If we've passed all frames, stop
-        if (!currentFrame) {
+        if (currentFrameIndex < 0) {
           // Before first frame, use first frame value
           if (frames.length > 0) {
             const vals = frames[0].values;
-            for (let i = 0; i < Math.min(vals.length, 4); i++) {
-              vm.setValue(i, vals[i]);
+            for (let i = 0; i < 6; i++) {
+              vm.setValue(i, vals[i] !== undefined ? vals[i] : null, true, true); // Enable smooth interpolation, value is normalized
             }
           }
+          animationFrameId = requestAnimationFrame(updateFrame);
           return;
         }
         
         if (currentTime >= frames[frames.length - 1].ts) {
           // Past last frame, use last frame value
           const vals = frames[frames.length - 1].values;
-          for (let i = 0; i < Math.min(vals.length, 4); i++) {
-            vm.setValue(i, vals[i]);
+          for (let i = 0; i < 6; i++) {
+            vm.setValue(i, vals[i] !== undefined ? vals[i] : null, true, true); // Enable smooth interpolation, value is normalized
           }
           stop();
           return;
         }
         
-        // Interpolate between current and next frame
-        if (nextFrame && currentFrame.ts !== nextFrame.ts) {
-          const t = (currentTime - currentFrame.ts) / (nextFrame.ts - currentFrame.ts);
-          const clampedT = Math.max(0, Math.min(1, t)); // Clamp between 0 and 1
-          
-          const interpolatedValues = [];
-          for (let i = 0; i < 4; i++) {
-            const currentVal = currentFrame.values[i] || 0;
-            const nextVal = nextFrame.values[i] || currentVal;
-            // Linear interpolation
-            const interpolated = currentVal + (nextVal - currentVal) * clampedT;
-            interpolatedValues[i] = interpolated;
-          }
-          
-          for (let i = 0; i < interpolatedValues.length; i++) {
-            vm.setValue(i, interpolatedValues[i]);
-          }
-        } else {
-          // No next frame or same timestamp, use current frame value
+        // Only update if we've moved to a new frame
+        if (currentFrameIndex !== lastFrameIndex) {
+          const currentFrame = frames[currentFrameIndex];
           const vals = currentFrame.values;
-          for (let i = 0; i < Math.min(vals.length, 4); i++) {
-            vm.setValue(i, vals[i]);
+          
+          // Set values with smooth interpolation enabled
+          // ViewModel will handle the smooth transition between frames
+          for (let i = 0; i < 6; i++) {
+            vm.setValue(i, vals[i] !== undefined ? vals[i] : null, true, true); // Enable smooth interpolation, value is normalized
           }
+          
+          lastFrameIndex = currentFrameIndex;
         }
+        
+        // Continue animation loop
+        animationFrameId = requestAnimationFrame(updateFrame);
       };
       
-      // Start interpolation loop
-      interpolate(); // Initial update
-      interpolationTimer = setInterval(interpolate, interpolationInterval);
+      // Start animation loop
+      animationFrameId = requestAnimationFrame(updateFrame);
     }
 
     // Recording functions

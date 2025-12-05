@@ -217,27 +217,32 @@
   }
 
   function updateMeter(values, options) {
-    const names = (options && options.names) || ['出演者A','出演者B','出演者C','出演者D'];
     const icon = (options && options.icon !== undefined) ? options.icon : null; // Default to null instead of 'assets/icon.svg'
     const icons = (options && options.icons) || null; // per-index icons
-    const numbersOnly = !!(options && options.numbersOnly);
-    const textYOffset = (options && typeof options.textYOffset === 'number') ? options.textYOffset : (numbersOnly ? 15 : 45);
-    const visibleIndices = (options && options.visibleIndices) || null; // null means all visible
+    const connectedDeviceIndices = (options && options.connectedDeviceIndices) || null; // null means calculate from values (non-null indices)
     const actualValues = (options && options.actualValues) || null; // Actual values for display (not normalized)
     const unit = (options && options.unit) || '%'; // Unit for display
     const minValue = (options && typeof options.minValue === 'number') ? options.minValue : 0;
     const maxValue = (options && typeof options.maxValue === 'number') ? options.maxValue : 100;
     
-    // Calculate device count from visible indices
+    // Calculate device count from connected device indices
     let deviceCount = 0;
-    if (visibleIndices !== null && Array.isArray(visibleIndices)) {
-      deviceCount = visibleIndices.length;
+    if (connectedDeviceIndices !== null && Array.isArray(connectedDeviceIndices)) {
+      deviceCount = connectedDeviceIndices.length;
     } else {
-      // If null, count non-empty values (including 0)
+      // If null, count non-null values (including 0)
       deviceCount = values.filter(v => v !== null && v !== undefined && !isNaN(v)).length;
     }
-    // Ensure at least 1 device for rendering (to avoid division by zero)
-    if (deviceCount === 0) deviceCount = 1;
+    // If no devices connected, don't render anything (early return)
+    if (deviceCount === 0) {
+      // Remove all existing icons
+      const containerEl = document.getElementById('meter-container');
+      const svg = containerEl ? containerEl.querySelector('svg[data-meter]') : null;
+      if (svg) {
+        svg.querySelectorAll('g[data-perf]').forEach(g => g.remove());
+      }
+      return;
+    }
     
     // Helper function to convert normalized value (0-100%) to actual value based on min/max settings
     function denormalizeValue(percentage) {
@@ -255,8 +260,17 @@
     });
 
     values.slice(0, 6).forEach((val, index) => {
-      // Skip if this index should be hidden (when visibleIndices is specified)
-      if (visibleIndices !== null && !visibleIndices.includes(index)) {
+      // Skip if value is null (device not connected)
+      if (val === null || val === undefined) {
+        // Remove icon if it exists
+        const existingG = svg.querySelector(`g[data-perf="${index}"]`);
+        if (existingG) existingG.remove();
+        existing.delete(String(index));
+        return;
+      }
+      
+      // Skip if this index should be hidden (when connectedDeviceIndices is specified)
+      if (connectedDeviceIndices !== null && !connectedDeviceIndices.includes(index)) {
         // Remove icon if it exists
         const existingG = svg.querySelector(`g[data-perf="${index}"]`);
         if (existingG) existingG.remove();
@@ -264,13 +278,13 @@
         return;
       }
 
-      // Map index to lane index based on visible indices
+      // Map index to lane index based on connected device indices
       let laneIndex = 0;
-      if (visibleIndices !== null && Array.isArray(visibleIndices)) {
-        const positionInVisible = visibleIndices.indexOf(index);
-        laneIndex = positionInVisible >= 0 ? positionInVisible : 0;
+      if (connectedDeviceIndices !== null && Array.isArray(connectedDeviceIndices)) {
+        const positionInConnected = connectedDeviceIndices.indexOf(index);
+        laneIndex = positionInConnected >= 0 ? positionInConnected : 0;
       } else {
-        // If no visible indices, use index directly (but limit to deviceCount)
+        // If no connected device indices specified, use index directly (but limit to deviceCount)
         laneIndex = index % deviceCount;
       }
       

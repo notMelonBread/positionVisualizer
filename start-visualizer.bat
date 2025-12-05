@@ -1,4 +1,5 @@
 @echo off
+setlocal enabledelayedexpansion
 chcp 65001 >nul
 cd /d "%~dp0"
 
@@ -28,53 +29,6 @@ if %errorlevel% equ 0 (
 
 REM Node.jsが見つからない場合
 echo [警告] Node.jsが見つかりません。
-echo.
-echo ポータブル版Node.jsが含まれていないようです。
-echo.
-echo 以下のいずれかの方法でNode.jsをインストールできます:
-echo.
-echo 1. 自動インストール（Chocolateyが必要、管理者権限が必要）
-echo 2. 手動インストール（推奨）
-echo 3. ポータブル版をダウンロード（システムにインストール不要）
-echo.
-set /p choice="選択してください (1/2/3): "
-
-if "%choice%"=="1" goto :install_choco
-if "%choice%"=="2" goto :install_manual
-if "%choice%"=="3" goto :download_portable
-goto :error_exit
-
-:install_choco
-echo.
-echo [情報] Chocolateyを使用してNode.jsをインストールします...
-echo 管理者権限が必要です。
-echo.
-powershell -Command "Start-Process cmd -ArgumentList '/c choco install nodejs -y && pause' -Verb RunAs"
-if %errorlevel% equ 0 (
-    echo [成功] Node.jsのインストールが開始されました。
-    echo インストール完了後、再度このバッチファイルを実行してください。
-    pause
-    exit /b 0
-) else (
-    echo [エラー] Chocolateyのインストールに失敗しました。
-    echo Chocolateyがインストールされていない場合は、先にインストールしてください。
-    echo https://chocolatey.org/install
-    pause
-    exit /b 1
-)
-
-:install_manual
-echo.
-echo [情報] Node.jsのインストーラーをダウンロードします...
-echo.
-start https://nodejs.org/
-echo.
-echo ブラウザでNode.jsのダウンロードページが開きました。
-echo インストール完了後、再度このバッチファイルを実行してください。
-pause
-exit /b 0
-
-:download_portable
 echo.
 echo [情報] ポータブル版Node.jsをダウンロードします...
 echo.
@@ -146,32 +100,131 @@ if not exist "node_modules" (
     )
 )
 
-REM bridge-server.jsを起動（新しいウィンドウで）
+REM Pythonがインストールされているか確認
+where python >nul 2>&1
+if %errorlevel% equ 0 (
+    echo [確認] システムのPythonを使用します。
+    for /f "delims=" %%i in ('where python') do set "PYTHON_CMD=%%i"
+    set "PIP_CMD=pip"
+    goto :check_python_venv
+)
+
+where py >nul 2>&1
+if %errorlevel% equ 0 (
+    echo [確認] システムのPythonを使用します。
+    set "PYTHON_CMD=py"
+    set "PIP_CMD=py -m pip"
+    goto :check_python_venv
+)
+
+REM Pythonが見つからない場合
+echo [警告] Pythonが見つかりません。
 echo.
-echo [起動] WebSocketサーバーを起動しています...
-if "%USE_PORTABLE%"=="1" (
-    start "Bridge Server" cmd /k "cd /d %~dp0 && %NODE_PATH% bridge-server.js"
+echo LeverAPIを起動するにはPythonが必要です。
+echo Pythonをインストールしてください: https://www.python.org/downloads/
+echo.
+echo インストール後、このスクリプトを再度実行してください。
+echo.
+set /p continue="Pythonなしで続行しますか？ (Y/N): "
+if /i not "!continue!"=="Y" goto :error_exit
+goto :skip_api
+
+:check_python_venv
+REM LeverAPIの仮想環境を確認
+if not exist "LeverAPI\venv" (
+    echo.
+    echo [情報] LeverAPIの仮想環境を作成しています...
+    "%PYTHON_CMD%" -m venv "%~dp0LeverAPI\venv"
+    if !errorlevel! neq 0 (
+        echo [警告] 仮想環境の作成に失敗しました。Pythonを直接使用します。
+        goto :check_api_deps
+    )
+    set "PYTHON_CMD=%~dp0LeverAPI\venv\Scripts\python.exe"
+    set "PIP_CMD=%~dp0LeverAPI\venv\Scripts\pip.exe"
 ) else (
-    start "Bridge Server" cmd /k "cd /d %~dp0 && node bridge-server.js"
+    set "PYTHON_CMD=%~dp0LeverAPI\venv\Scripts\python.exe"
+    set "PIP_CMD=%~dp0LeverAPI\venv\Scripts\pip.exe"
+)
+
+REM 仮想環境のPythonが存在するか確認
+if not exist "%PYTHON_CMD%" (
+    echo [警告] 仮想環境のPythonが見つかりません。システムのPythonを使用します。
+    where python >nul 2>&1
+    if !errorlevel! equ 0 (
+        set "PYTHON_CMD=python"
+        set "PIP_CMD=pip"
+    ) else (
+        where py >nul 2>&1
+        if !errorlevel! equ 0 (
+            set "PYTHON_CMD=py"
+            set "PIP_CMD=py -m pip"
+        ) else (
+            echo [エラー] Pythonが見つかりません。
+            goto :skip_api
+        )
+    )
+)
+
+:check_api_deps
+REM LeverAPIの依存関係をインストール
+echo.
+echo [情報] LeverAPIの依存関係を確認しています...
+%PIP_CMD% install -q -r LeverAPI\requirements.txt >nul 2>&1
+if !errorlevel! neq 0 (
+    echo [警告] 依存関係のインストールに失敗しました。続行します...
+)
+
+REM LeverAPIを起動
+echo.
+echo [起動] LeverAPIサーバーを起動しています...
+
+REM 起動コマンドを実行
+cd /d "%~dp0LeverAPI"
+start "LeverAPI Server" cmd /k "%PYTHON_CMD% app.py"
+cd /d "%~dp0"
+timeout /t 3 /nobreak >nul
+
+:skip_api
+REM HTTPサーバーを起動
+echo.
+echo [起動] HTTPサーバーを起動しています...
+if "%USE_PORTABLE%"=="1" (
+    start "HTTP Server" cmd /k "cd /d %~dp0 && %NODE_PATH% positionVisualizer\tools\http-server.js"
+) else (
+    start "HTTP Server" cmd /k "cd /d %~dp0 && node positionVisualizer\tools\http-server.js"
+)
+timeout /t 2 /nobreak >nul
+
+REM bridge-server.jsを起動
+echo.
+echo [起動] WebSocketブリッジサーバーを起動しています（レガシー互換性）...
+if "%USE_PORTABLE%"=="1" (
+    start "Bridge Server" cmd /k "cd /d %~dp0 && %NODE_PATH% positionVisualizer\tools\bridge-server.js"
+) else (
+    start "Bridge Server" cmd /k "cd /d %~dp0 && node positionVisualizer\tools\bridge-server.js"
 )
 timeout /t 2 /nobreak >nul
 
 REM メインウィンドウを起動
 echo [起動] メインウィンドウを起動しています...
-start "" "positionVisualizer\index.html"
+powershell -Command "Start-Process 'http://127.0.0.1:8000/'"
 
 REM 少し待ってからオーバーレイウィンドウを起動
 timeout /t 1 /nobreak >nul
 echo [起動] オーバーレイウィンドウを起動しています...
-start "" "positionVisualizer\overlay.html"
+powershell -Command "Start-Process 'http://127.0.0.1:8000/overlay.html'"
 
 echo.
 echo ========================================
 echo 起動完了しました。
 echo ========================================
 echo.
-echo 注意: Bridge Serverウィンドウを閉じると、アプリが動作しなくなります。
-echo 終了する場合は、Bridge Serverウィンドウを閉じてください。
+echo 注意: 以下のウィンドウを閉じると、アプリが動作しなくなります。
+echo   - LeverAPI Server (ポート5000)
+echo   - HTTP Server (ポート8000)
+echo   - Bridge Server (ポート8123)
+echo.
+echo 終了する場合は、これらのウィンドウを閉じてください。
 echo.
 timeout /t 3 /nobreak >nul
 exit /b 0

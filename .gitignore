@@ -1,0 +1,23 @@
+# Node.js
+node_modules/
+node-portable/
+node-portable.zip
+
+# Logs
+*.log
+positionVisualizer/logs/*.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Build
+dist/
+build/
+

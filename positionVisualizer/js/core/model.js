@@ -1,6 +1,13 @@
 (function(){
   function MeterState(values, names, icon, icons){
-    this.values = Array.isArray(values) ? values.slice(0,6) : [];
+    // Initialize values array with null support (null means device not connected)
+    if (Array.isArray(values)) {
+      const arr = values.slice(0,6);
+      while (arr.length < 6) arr.push(null);
+      this.values = arr;
+    } else {
+      this.values = [null, null, null, null, null, null];
+    }
     this.names = Array.isArray(names) ? names.slice(0,6) : ['','','','','',''];
     this.icon = icon || 'assets/icon.svg';
     // Per-index icons (optional). Falls back to single icon if not provided

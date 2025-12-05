@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>[テスト用] リアルタイム PedanticLeverController</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.7.0/dist/chart.min.js"></script>
+    <script src="https://cdn.socket.io/4.4.1/socket.io.min.js"></script>
+    <style>
+        .test-banner {
+            background-color: #ff6b6b;
+            color: white;
+            text-align: center;
+            padding: 10px;
+            font-weight: bold;
+            margin-bottom: 20px;
+            border-radius: 4px;
+        }
+
+        .realtime-badge {
+            background-color: #4CAF50;
+            color: white;
+            padding: 3px 10px;
+            border-radius: 10px;
+            font-size: 0.8em;
+            margin-left: 10px;
+        }
+
+        .value-gauge {
+            width: 100%;
+            height: 30px;
+            background-color: #eee;
+            border-radius: 5px;
+            margin: 10px 0;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .gauge-fill {
+            height: 100%;
+            background-color: #4CAF50;
+            transition: width 0.1s ease-in-out; /* スムーズなトランジション */
+            width: 0%;
+        }
+
+        .device-card {
+            border: 1px solid #ddd;
+            padding: 15px;
+            margin-bottom: 15px;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+        }
+
+        .device-value {
+            font-size: 2em;
+            font-weight: bold;
+            text-align: center;
+        }
+
+        .latency-info {
+            text-align: right;
+            font-size: 0.8em;
+            color: #666;
+            margin-top: 5px;
+        }
+
+        .connection-status {
+            padding: 5px 10px;
+            border-radius: 5px;
+            display: inline-block;
+            margin-left: 10px;
+            font-size: 0.8em;
+        }
+
+        .connected {
+            background-color: #4CAF50;
+            color: white;
+        }
+
+        .disconnected {
+            background-color: #f44336;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="test-banner">
+            これはリアルタイムテスト用UIです。本番環境では使用しないでください。
+        </div>
+        <header>
+            <h1>Pedantic Lever Controller - リアルタイムUI <span class="realtime-badge">REALTIME</span></h1>
+            <div class="controls">
+                <button id="scanButton" class="button primary">デバイススキャン</button>
+                <span id="connectionStatus" class="connection-status disconnected">未接続</span>
+            </div>
+        </header>
+
+        <div class="dashboard">
+            <div class="panel device-panel">
+                <h2>検出デバイス</h2>
+                <div class="device-list" id="deviceList">
+                    <p class="placeholder" id="noDevicesMessage">デバイスが見つかりません</p>
+                    <!-- デバイスリストがここに動的に追加されます -->
+                </div>
+            </div>
+
+            <div class="panel value-panel">
+                <h2>リアルタイムレバー値</h2>
+                <div id="realtimeValues" class="realtime-values">
+                    <!-- リアルタイム値がここに動的に追加されます -->
+                    <p class="placeholder" id="noValuesMessage">接続されたデバイスがありません</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="panel">
+            <h2>パフォーマンス情報</h2>
+            <div id="performanceInfo">
+                <p><strong>接続状態:</strong> <span id="connStatus">未接続</span></p>
+                <p><strong>平均レイテンシ:</strong> <span id="avgLatency">-</span> ms</p>
+                <p><strong>更新頻度:</strong> <span id="updateFrequency">-</span> 回/秒</p>
+                <p><strong>最終更新:</strong> <span id="lastUpdate">-</span></p>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <p>【リアルタイムテスト環境】 &copy; 2023 Pedantic Co., Ltd. All rights reserved.</p>
+    </footer>
+
+    <script>
+        // WebSocket接続
+        const socket = io(`http://${window.location.hostname}:5000`);
+        const deviceValues = {};
+        const latencyRecords = [];
+        const updateTimeRecords = [];
+        let lastUpdateTimes = {};
+
+        // 接続イベント
+        socket.on('connect', () => {
+            console.log('WebSocketサーバーに接続しました');
+            document.getElementById('connectionStatus').className = 'connection-status connected';
+            document.getElementById('connectionStatus').textContent = '接続中';
+            document.getElementById('connStatus').textContent = '接続済み';
+        });
+
+        // 切断イベント
+        socket.on('disconnect', () => {
+            console.log('WebSocketサーバーから切断されました');
+            document.getElementById('connectionStatus').className = 'connection-status disconnected';
+            document.getElementById('connectionStatus').textContent = '切断';
+            document.getElementById('connStatus').textContent = '切断';
+        });
+
+        // すべてのデバイス値を受信
+        socket.on('all_values', (values) => {
+            console.log('すべてのデバイス値を受信:', values);
+
+            // デバイス値を保存
+            for (const [deviceId, data] of Object.entries(values)) {
+                deviceValues[deviceId] = data;
+            }
+
+            updateDeviceList();
+            updateRealtimeValues();
+        });
+
+        // デバイス値の更新を受信（リアルタイム）
+        socket.on('device_update', (update) => {
+            console.log('デバイス更新:', update);
+            const { device_id, data } = update;
+            const now = Date.now();
+
+            // 更新の時間を記録（更新頻度計算用）
+            if (device_id in lastUpdateTimes) {
+                const timeDiff = now - lastUpdateTimes[device_id];
+                updateTimeRecords.push(timeDiff);
+                // 最大100件まで記録
+                if (updateTimeRecords.length > 100) {
+                    updateTimeRecords.shift();
+                }
+            }
+            lastUpdateTimes[device_id] = now;
+
+            // レイテンシ計算（サーバータイムスタンプとクライアント時間の差）
+            const serverTime = data.timestamp * 1000; // 秒からミリ秒に変換
+            const latency = now - serverTime;
+            latencyRecords.push(latency);
+            // 最大100件まで記録
+            if (latencyRecords.length > 100) {
+                latencyRecords.shift();
+            }
+
+            // デバイス値を更新
+            deviceValues[device_id] = data;
+
+            // UI更新
+            updateDeviceValueDisplay(device_id);
+            updatePerformanceInfo();
+        });
+
+        // スキャンボタン処理
+        document.getElementById('scanButton').addEventListener('click', () => {
+            fetch('/api/scan', {
+                method: 'POST',
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('スキャン結果:', data);
+                // スキャン後にデバイスリストを更新
+                refreshDevices();
+            })
+            .catch(error => console.error('エラー:', error));
+        });
+
+        // デバイスリスト更新
+        function refreshDevices() {
+            fetch('/api/devices')
+            .then(response => response.json())
+            .then(data => {
+                const devices = data.devices;
+                console.log('デバイス一覧:', devices);
+
+                const deviceList = document.getElementById('deviceList');
+                deviceList.innerHTML = '';
+
+                if (devices.length === 0) {
+                    document.getElementById('noDevicesMessage').style.display = 'block';
+                } else {
+                    document.getElementById('noDevicesMessage').style.display = 'none';
+
+                    devices.forEach(device => {
+                        const deviceItem = document.createElement('div');
+                        deviceItem.className = 'device-item';
+
+                        const statusClass = device.status === 'online' ? 'status-online' : 'status-offline';
+
+                        deviceItem.innerHTML = `
+                            <span class="device-name">${device.name}</span>
+                            <span class="device-id">(ID: ${device.id})</span>
+                            <span class="device-status ${statusClass}">${device.status}</span>
+                        `;
+
+                        // オンラインデバイスのみ購読
+                        if (device.status === 'online') {
+                            socket.emit('subscribe', { device_id: device.id });
+                        }
+
+                        deviceList.appendChild(deviceItem);
+                    });
+
+                    updateRealtimeValues();
+                }
+            })
+            .catch(error => console.error('エラー:', error));
+        }
+
+        // リアルタイム値表示の更新
+        function updateRealtimeValues() {
+            const valuesContainer = document.getElementById('realtimeValues');
+            valuesContainer.innerHTML = '';
+
+            const deviceIds = Object.keys(deviceValues);
+
+            if (deviceIds.length === 0) {
+                document.getElementById('noValuesMessage').style.display = 'block';
+                valuesContainer.appendChild(document.getElementById('noValuesMessage'));
+                return;
+            }
+
+            document.getElementById('noValuesMessage').style.display = 'none';
+
+            deviceIds.forEach(deviceId => {
+                // デバイスの存在確認
+                const deviceValueCard = createOrUpdateDeviceValueCard(deviceId);
+                valuesContainer.appendChild(deviceValueCard);
+            });
+        }
+
+        // デバイス値カードの作成または更新
+        function createOrUpdateDeviceValueCard(deviceId) {
+            let card = document.getElementById(`device-card-${deviceId}`);
+
+            if (!card) {
+                // 新しいカードを作成
+                card = document.createElement('div');
+                card.className = 'device-card';
+                card.id = `device-card-${deviceId}`;
+
+                card.innerHTML = `
+                    <h3 id="device-name-${deviceId}">デバイス読み込み中...</h3>
+                    <div class="value-gauge">
+                        <div id="gauge-fill-${deviceId}" class="gauge-fill"></div>
+                    </div>
+                    <div id="device-value-${deviceId}" class="device-value">-</div>
+                    <div id="latency-${deviceId}" class="latency-info">-</div>
+                `;
+            }
+
+            updateDeviceValueDisplay(deviceId);
+
+            return card;
+        }
+
+        // デバイス値表示の更新
+        function updateDeviceValueDisplay(deviceId) {
+            const data = deviceValues[deviceId];
+            if (!data) return;
+
+            // デバイス名を取得（APIから）
+            fetch(`/api/devices`)
+            .then(response => response.json())
+            .then(result => {
+                const device = result.devices.find(d => d.id === deviceId);
+                if (device) {
+                    const deviceNameEl = document.getElementById(`device-name-${deviceId}`);
+                    if (deviceNameEl) {
+                        deviceNameEl.textContent = device.name;
+                    }
+                }
+            })
+            .catch(error => console.error('デバイス名取得エラー:', error));
+
+            const valueEl = document.getElementById(`device-value-${deviceId}`);
+            const gaugeEl = document.getElementById(`gauge-fill-${deviceId}`);
+            const latencyEl = document.getElementById(`latency-${deviceId}`);
+
+            if (valueEl && gaugeEl) {
+                valueEl.textContent = data.value;
+                gaugeEl.style.width = `${data.value}%`;
+
+                // 現在時刻
+                const now = new Date();
+                const timestamp = new Date(data.timestamp * 1000);
+                const diffMs = now - timestamp;
+
+                latencyEl.textContent = `更新: ${diffMs}ms 前`;
+
+                // 最終更新時間表示
+                document.getElementById('lastUpdate').textContent =
+                    timestamp.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3 });
+            }
+        }
+
+        // パフォーマンス情報の更新
+        function updatePerformanceInfo() {
+            // 平均レイテンシの計算
+            if (latencyRecords.length > 0) {
+                const avgLatency = latencyRecords.reduce((sum, val) => sum + val, 0) / latencyRecords.length;
+                document.getElementById('avgLatency').textContent = avgLatency.toFixed(2);
+            }
+
+            // 平均更新頻度の計算
+            if (updateTimeRecords.length > 0) {
+                const avgUpdateTime = updateTimeRecords.reduce((sum, val) => sum + val, 0) / updateTimeRecords.length;
+                const frequency = 1000 / avgUpdateTime; // 1秒あたりの更新回数
+                document.getElementById('updateFrequency').textContent = frequency.toFixed(2);
+            }
+        }
+
+        // 初期化
+        document.addEventListener('DOMContentLoaded', () => {
+            refreshDevices();
+
+            // 性能情報を定期的に更新
+            setInterval(updatePerformanceInfo, 1000);
+        });
+    </script>
+</body>
+</html>

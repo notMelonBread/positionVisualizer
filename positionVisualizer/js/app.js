@@ -11,10 +11,6 @@
         resolve();
         return;
       }
-      if (src.includes('mock.js') && window.MockData) {
-        resolve();
-        return;
-      }
       if (src.includes('replay.js') && window.Replay) {
         resolve();
         return;
@@ -63,7 +59,6 @@
       'js/bindings/bindings.js',
       'js/views/meterRenderer.js',
       'js/views/iconRenderer.js',
-      'js/services/mock.js',
       'js/services/replay.js'
     ];
 

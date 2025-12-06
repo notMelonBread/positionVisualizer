@@ -3,6 +3,10 @@ node_modules/
 node-portable/
 node-portable.zip
 
+# Python
+python-portable/
+python-portable.zip
+
 # Logs
 *.log
 positionVisualizer/logs/*.json

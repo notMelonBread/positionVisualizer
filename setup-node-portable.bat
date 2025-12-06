@@ -68,8 +68,6 @@ echo.
 echo 場所: %NODE_DIR%
 "%NODE_DIR%\node.exe" --version
 echo.
-echo 次回から start-visualizer.bat を実行すると、
-echo 自動的にこのポータブル版Node.jsが使用されます。
 echo.
 pause
 

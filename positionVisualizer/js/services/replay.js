@@ -16,11 +16,8 @@
     let recordingStartTime = null;
 
     function inferInterval(sorted) {
-      if (sorted.length < 2) return 200;
-      const deltas = [];
-      for (let i=1;i<sorted.length;i++) deltas.push(sorted[i].ts - sorted[i-1].ts);
-      deltas.sort((a,b)=>a-b);
-      return Math.max(20, deltas[Math.floor(deltas.length/2)] || 200);
+      // Always return 200ms interval
+      return 200;
     }
 
     function parseLogArray(arr) {
@@ -104,8 +101,10 @@
       }
       isPlaying = false;
       playbackStartTime = null;
-      // Note: ViewModel's interpolation will continue until completion
-      // This ensures smooth animation even when stopping playback
+      // Reset all values to null (initial state)
+      for (let i = 0; i < 6; i++) {
+        vm.setValue(i, null, false);
+      }
     }
 
     function play(){
@@ -130,22 +129,25 @@
         const currentTime = Date.now() - playbackStartTime;
         
         // Find the frame that should be playing now
-        let currentFrameIndex = -1;
+        let prevFrameIndex = -1;
+        let nextFrameIndex = -1;
+        
         for (let i = 0; i < frames.length; i++) {
           if (frames[i].ts <= currentTime) {
-            currentFrameIndex = i;
+            prevFrameIndex = i;
           } else {
+            nextFrameIndex = i;
             break;
           }
         }
         
         // If we've passed all frames, stop
-        if (currentFrameIndex < 0) {
+        if (prevFrameIndex < 0) {
           // Before first frame, use first frame value
           if (frames.length > 0) {
             const vals = frames[0].values;
             for (let i = 0; i < 6; i++) {
-              vm.setValue(i, vals[i] !== undefined ? vals[i] : null, true, true); // Enable smooth interpolation, value is normalized
+              vm.setValue(i, vals[i] !== undefined ? vals[i] : null, false, true); // smooth=false, value is normalized
             }
           }
           animationFrameId = requestAnimationFrame(updateFrame);
@@ -153,27 +155,51 @@
         }
         
         if (currentTime >= frames[frames.length - 1].ts) {
-          // Past last frame, use last frame value
-          const vals = frames[frames.length - 1].values;
+          // Past last frame - reset all values to null (initial state)
           for (let i = 0; i < 6; i++) {
-            vm.setValue(i, vals[i] !== undefined ? vals[i] : null, true, true); // Enable smooth interpolation, value is normalized
+            vm.setValue(i, null, false);
           }
           stop();
           return;
         }
         
-        // Only update if we've moved to a new frame
-        if (currentFrameIndex !== lastFrameIndex) {
-          const currentFrame = frames[currentFrameIndex];
-          const vals = currentFrame.values;
+        // Linear interpolation between frames
+        const prevFrame = frames[prevFrameIndex];
+        let interpolatedValues = prevFrame.values.slice();
+        
+        if (nextFrameIndex >= 0 && nextFrameIndex < frames.length) {
+          const nextFrame = frames[nextFrameIndex];
+          const prevTime = prevFrame.ts;
+          const nextTime = nextFrame.ts;
           
-          // Set values with smooth interpolation enabled
-          // ViewModel will handle the smooth transition between frames
+          // Calculate interpolation factor (0 to 1)
+          const t = nextTime > prevTime ? (currentTime - prevTime) / (nextTime - prevTime) : 0;
+          const clampedT = Math.max(0, Math.min(1, t));
+          
+          // Interpolate each device value
           for (let i = 0; i < 6; i++) {
-            vm.setValue(i, vals[i] !== undefined ? vals[i] : null, true, true); // Enable smooth interpolation, value is normalized
+            const prevVal = prevFrame.values[i];
+            const nextVal = nextFrame.values[i];
+            
+            if (prevVal !== null && prevVal !== undefined && nextVal !== null && nextVal !== undefined) {
+              // Both values exist, interpolate
+              interpolatedValues[i] = prevVal + (nextVal - prevVal) * clampedT;
+            } else if (prevVal !== null && prevVal !== undefined) {
+              // Only previous value exists, use it
+              interpolatedValues[i] = prevVal;
+            } else if (nextVal !== null && nextVal !== undefined) {
+              // Only next value exists, use it
+              interpolatedValues[i] = nextVal;
+            } else {
+              // Neither value exists
+              interpolatedValues[i] = null;
+            }
           }
-          
-          lastFrameIndex = currentFrameIndex;
+        }
+        
+        // Update values with interpolated values (smooth=false to use replay-side interpolation)
+        for (let i = 0; i < 6; i++) {
+          vm.setValue(i, interpolatedValues[i] !== undefined ? interpolatedValues[i] : null, false, true); // smooth=false, value is normalized
         }
         
         // Continue animation loop

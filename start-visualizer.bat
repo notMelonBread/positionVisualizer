@@ -29,11 +29,26 @@ if %errorlevel% equ 0 (
 
 REM Node.jsが見つからない場合
 echo [警告] Node.jsが見つかりません。
+echo [WARNING] Node.js not found.
 echo.
 echo [情報] ポータブル版Node.jsをダウンロードします...
+echo [INFO] Downloading portable Node.js...
 echo.
 echo 注意: ポータブル版は約50MBのダウンロードが必要です。
-set /p confirm="続行しますか？ (Y/N): "
+echo Note: Portable version requires approximately 50MB download.
+echo.
+echo 重要: インターネット接続が必要です。
+echo IMPORTANT: Internet connection is required.
+echo.
+echo オフライン環境の場合:
+echo - setup-node-portable.bat を事前に実行してポータブル版をセットアップしてください
+echo - または、システムにNode.jsをインストールしてください
+echo.
+echo For offline environments:
+echo - Run setup-node-portable.bat beforehand to set up portable version
+echo - Or install Node.js on your system
+echo.
+set /p confirm="続行しますか？ (Y/N): Continue? (Y/N): "
 if /i not "%confirm%"=="Y" goto :error_exit
 
 REM ポータブル版Node.jsのダウンロード（Win32 x64版）
@@ -42,16 +57,40 @@ set "NODE_URL=https://nodejs.org/dist/%NODE_VERSION%/node-%NODE_VERSION%-win-x64
 set "NODE_ZIP=%~dp0node-portable.zip"
 set "NODE_DIR=%~dp0node-portable"
 
+REM 絶対パスに変換
+for %%A in ("%NODE_ZIP%") do set "NODE_ZIP_FULL=%%~fA"
+for %%A in ("%NODE_DIR%") do set "NODE_DIR_FULL=%%~fA"
+
 echo [ダウンロード] Node.jsポータブル版をダウンロードしています...
-powershell -Command "Invoke-WebRequest -Uri '%NODE_URL%' -OutFile '%NODE_ZIP%'"
+echo [DOWNLOAD] Downloading portable Node.js...
+echo これには数分かかる場合があります... This may take a few minutes...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $ProgressPreference = 'SilentlyContinue'; try { Invoke-WebRequest -Uri '%NODE_URL%' -OutFile '%NODE_ZIP_FULL%' -UseBasicParsing; exit 0 } catch { Write-Host $_.Exception.Message; exit 1 }"
 if %errorlevel% neq 0 (
     echo [エラー] ダウンロードに失敗しました。
+    echo [ERROR] Download failed.
+    echo.
+    echo インターネット接続を確認してください。
+    echo Please check your internet connection.
+    echo.
+    echo オフライン環境の場合:
+    echo - setup-node-portable.bat を事前に実行してください
+    echo - または、システムにNode.jsをインストールしてください
+    echo.
+    echo For offline environments:
+    echo - Run setup-node-portable.bat beforehand
+    echo - Or install Node.js on your system
+    pause
+    exit /b 1
+)
+
+if not exist "%NODE_ZIP_FULL%" (
+    echo [エラー] ダウンロードしたファイルが見つかりません。
     pause
     exit /b 1
 )
 
 echo [展開] ファイルを展開しています...
-powershell -Command "Expand-Archive -Path '%NODE_ZIP%' -DestinationPath '%NODE_DIR%' -Force"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; try { if (-not (Test-Path '%NODE_DIR_FULL%')) { New-Item -ItemType Directory -Path '%NODE_DIR_FULL%' -Force | Out-Null }; Expand-Archive -Path '%NODE_ZIP_FULL%' -DestinationPath '%NODE_DIR_FULL%' -Force; exit 0 } catch { Write-Host $_.Exception.Message; exit 1 }"
 if %errorlevel% neq 0 (
     echo [エラー] 展開に失敗しました。
     pause
@@ -59,15 +98,19 @@ if %errorlevel% neq 0 (
 )
 
 REM 展開されたフォルダ内のnode-*フォルダをnode-portableにリネーム
-for /d %%i in ("%NODE_DIR%\node-*") do (
-    move "%%i\*" "%NODE_DIR%\" >nul 2>&1
-    rmdir "%%i" >nul 2>&1
+for /d %%i in ("%NODE_DIR_FULL%\node-*") do (
+    if exist "%%i" (
+        xcopy /E /I /Y "%%i\*" "%NODE_DIR_FULL%\" >nul 2>&1
+        rd /S /Q "%%i" >nul 2>&1
+    )
 )
 
-del "%NODE_ZIP%" >nul 2>&1
+del "%NODE_ZIP_FULL%" >nul 2>&1
 echo [成功] ポータブル版Node.jsの準備が完了しました。
 set "USE_PORTABLE=1"
-set "PATH=%NODE_DIR%;%PATH%"
+set "PATH=%NODE_DIR_FULL%;%PATH%"
+set "NODE_PATH=%NODE_DIR_FULL%\node.exe"
+set "NPM_PATH=%NODE_DIR_FULL%\npm.cmd"
 goto :check_dependencies
 
 :check_dependencies
@@ -100,7 +143,24 @@ if not exist "node_modules" (
     )
 )
 
-REM Pythonがインストールされているか確認
+REM ポータブル版Pythonのパスを確認
+set "PYTHON_PORTABLE_PATH=%~dp0python-portable\python.exe"
+set "USE_PORTABLE_PYTHON=0"
+
+REM ポータブル版Pythonが存在するか確認
+if exist "%PYTHON_PORTABLE_PATH%" (
+    echo [確認] ポータブル版Pythonを使用します。
+    set "USE_PORTABLE_PYTHON=1"
+    set "PYTHON_CMD=%PYTHON_PORTABLE_PATH%"
+    set "PIP_CMD=%~dp0python-portable\Scripts\pip.exe"
+    if not exist "%PIP_CMD%" (
+        REM pipが存在しない場合、get-pip.pyを使用してインストール
+        set "PIP_CMD=%~dp0python-portable\python.exe -m pip"
+    )
+    goto :check_python_venv
+)
+
+REM システムのPythonがインストールされているか確認
 where python >nul 2>&1
 if %errorlevel% equ 0 (
     echo [確認] システムのPythonを使用します。
@@ -119,17 +179,116 @@ if %errorlevel% equ 0 (
 
 REM Pythonが見つからない場合
 echo [警告] Pythonが見つかりません。
+echo [WARNING] Python not found.
 echo.
-echo LeverAPIを起動するにはPythonが必要です。
-echo Pythonをインストールしてください: https://www.python.org/downloads/
+echo [情報] ポータブル版Pythonをダウンロードします...
+echo [INFO] Downloading portable Python...
 echo.
-echo インストール後、このスクリプトを再度実行してください。
+echo 注意: ポータブル版は約25MBのダウンロードが必要です。
+echo Note: Portable version requires approximately 25MB download.
 echo.
-set /p continue="Pythonなしで続行しますか？ (Y/N): "
-if /i not "!continue!"=="Y" goto :error_exit
-goto :skip_api
+echo 重要: インターネット接続が必要です。
+echo IMPORTANT: Internet connection is required.
+echo.
+echo オフライン環境の場合:
+echo - システムにPythonをインストールしてください
+echo - または、Pythonなしで続行できます（LeverAPIは起動しません）
+echo.
+echo For offline environments:
+echo - Install Python on your system
+echo - Or continue without Python (LeverAPI will not start)
+echo.
+set /p continue="続行しますか？ (Y/N): Continue? (Y/N): "
+if /i not "!continue!"=="Y" (
+    echo.
+    echo Pythonなしで続行しますか？ (Y/N): 
+    set /p skip_python="Skip Python? (Y/N): "
+    if /i not "!skip_python!"=="Y" goto :error_exit
+    goto :skip_api
+)
+
+REM ポータブル版Pythonのダウンロード（Windows x64版）
+set "PYTHON_VERSION=3.11.9"
+set "PYTHON_URL=https://www.python.org/ftp/python/%PYTHON_VERSION%/python-%PYTHON_VERSION%-embed-amd64.zip"
+set "PYTHON_ZIP=%~dp0python-portable.zip"
+set "PYTHON_DIR=%~dp0python-portable"
+set "GET_PIP_URL=https://bootstrap.pypa.io/get-pip.py"
+
+REM 絶対パスに変換
+for %%A in ("%PYTHON_ZIP%") do set "PYTHON_ZIP_FULL=%%~fA"
+for %%A in ("%PYTHON_DIR%") do set "PYTHON_DIR_FULL=%%~fA"
+
+REM ディレクトリを作成
+if not exist "%PYTHON_DIR_FULL%" (
+    mkdir "%PYTHON_DIR_FULL%" >nul 2>&1
+)
+
+echo [ダウンロード] Pythonポータブル版をダウンロードしています...
+echo [DOWNLOAD] Downloading portable Python...
+echo これには数分かかる場合があります... This may take a few minutes...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $ProgressPreference = 'SilentlyContinue'; try { Invoke-WebRequest -Uri '%PYTHON_URL%' -OutFile '%PYTHON_ZIP_FULL%' -UseBasicParsing; exit 0 } catch { Write-Host $_.Exception.Message; exit 1 }"
+if %errorlevel% neq 0 (
+    echo [エラー] Pythonのダウンロードに失敗しました。
+    echo [ERROR] Python download failed.
+    echo.
+    echo インターネット接続を確認してください。
+    echo Please check your internet connection.
+    echo.
+    echo Pythonなしで続行しますか？ (Y/N): 
+    set /p skip_python="Continue without Python? (Y/N): "
+    if /i not "!skip_python!"=="Y" goto :error_exit
+    goto :skip_api
+)
+
+if not exist "%PYTHON_ZIP_FULL%" (
+    echo [エラー] ダウンロードしたファイルが見つかりません。
+    pause
+    exit /b 1
+)
+
+echo [展開] ファイルを展開しています...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; try { Expand-Archive -Path '%PYTHON_ZIP_FULL%' -DestinationPath '%PYTHON_DIR_FULL%' -Force; exit 0 } catch { Write-Host $_.Exception.Message; exit 1 }"
+if %errorlevel% neq 0 (
+    echo [エラー] 展開に失敗しました。
+    pause
+    exit /b 1
+)
+
+del "%PYTHON_ZIP_FULL%" >nul 2>&1
+
+REM pipをセットアップ
+echo [セットアップ] pipをインストールしています...
+set "GET_PIP_SCRIPT=%PYTHON_DIR_FULL%\get-pip.py"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $ProgressPreference = 'SilentlyContinue'; try { Invoke-WebRequest -Uri '%GET_PIP_URL%' -OutFile '%GET_PIP_SCRIPT%' -UseBasicParsing; exit 0 } catch { Write-Host $_.Exception.Message; exit 1 }"
+if %errorlevel% equ 0 (
+    "%PYTHON_DIR_FULL%\python.exe" "%GET_PIP_SCRIPT%" --quiet
+    del "%GET_PIP_SCRIPT%" >nul 2>&1
+)
+
+REM python._pthファイルを修正してpipが動作するようにする
+set "PYTHON_PTH=%PYTHON_DIR_FULL%\python311._pth"
+if exist "%PYTHON_PTH%" (
+    REM import siteを有効にする
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "(Get-Content '%PYTHON_PTH%') -replace '^#import site', 'import site' | Set-Content '%PYTHON_PTH%'"
+)
+
+echo [成功] ポータブル版Pythonの準備が完了しました。
+set "USE_PORTABLE_PYTHON=1"
+set "PYTHON_CMD=%PYTHON_DIR_FULL%\python.exe"
+if exist "%PYTHON_DIR_FULL%\Scripts\pip.exe" (
+    set "PIP_CMD=%PYTHON_DIR_FULL%\Scripts\pip.exe"
+) else (
+    set "PIP_CMD=%PYTHON_DIR_FULL%\python.exe -m pip"
+)
+goto :check_python_venv
 
 :check_python_venv
+REM ポータブル版Pythonを使用している場合は仮想環境をスキップ（既に分離されているため）
+if "%USE_PORTABLE_PYTHON%"=="1" (
+    echo [情報] ポータブル版Pythonを使用するため、仮想環境はスキップします。
+    goto :check_api_deps
+)
+
 REM LeverAPIの仮想環境を確認
 if not exist "LeverAPI\venv" (
     echo.
@@ -231,6 +390,7 @@ exit /b 0
 
 :error_exit
 echo.
-echo [エラー] Node.jsのセットアップをキャンセルしました。
+echo [エラー] セットアップをキャンセルしました。
+echo [ERROR] Setup was cancelled.
 pause
 exit /b 1

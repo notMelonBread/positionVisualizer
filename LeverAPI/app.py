@@ -1,0 +1,875 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+LeverAPI - レバーデバイス管理 BFF APIサーバー
+
+このスクリプトは、ネットワーク上のレバーデバイスを検出し、
+それらとの通信を管理するFlask APIサーバーです。
+BFF（Backend For Frontend）として動作し、フロントエンド向けに最適化された
+データ集約・変換機能を備えたHTTP APIエンドポイントとWebSocketリアルタイム通信を提供します。
+"""
+
+# Eventletを最初にインポートし、monkey_patchを適用（他のモジュールよりも先に）
+# 注意: Eventletは非推奨になっています。将来的には別のフレームワークへの移行を検討してください。
+# 詳細: https://eventlet.readthedocs.io/en/latest/asyncio/migration.html
+import eventlet
+eventlet.monkey_patch(thread=True, time=True, socket=True, select=True, os=True)
+
+import os
+import sys
+import json
+import time
+import socket
+import logging
+import threading
+from pathlib import Path
+
+from flask import Flask, jsonify, request, render_template, send_from_directory
+from flask_cors import CORS
+from flask_socketio import SocketIO, emit
+import requests
+from datetime import datetime, timedelta
+
+# embeddable/portable Pythonではスクリプトディレクトリがsys.pathに含まれないことがあるため明示的に追加
+BASE_DIR = Path(__file__).resolve().parent
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
+
+# 内部モジュールのインポート
+from api.discovery import LeverDiscovery
+from api.device_manager import DeviceManager
+from api.transformers import transform_device_for_frontend
+
+# ロギング設定
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# アプリケーション設定
+app = Flask(__name__)
+CORS(app)  # クロスオリジンリクエストを許可
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')  # WebSocket初期化
+
+# シミュレーションモードフラグ
+SIMULATION_MODE = False
+
+# WebSocketリアルタイムデータ更新設定
+UPDATE_INTERVAL = 0.1  # 100ミリ秒ごとに更新（WebSocket通知用）
+LAST_DEVICE_VALUES = {}  # 前回のデバイス値を格納（変更検出用）
+NOTIFICATION_THRESHOLDS = {
+    'value_change': 2.0,  # 値の変化が2以上の場合に通知
+    'time_threshold': 1.0,  # 最後の通知から1秒以上経過した場合は小さな変化でも通知
+    'force_interval': 2.0,  # 最後の通知から2秒以上経過した場合は変化がなくても通知
+}
+LAST_NOTIFICATION_TIMES = {}  # デバイスごとの最後の通知時間
+
+# ディスカバリーとデバイスマネージャーの初期化
+discovery = LeverDiscovery()
+device_manager = DeviceManager(discovery)
+
+# APIレスポンスの標準化関数
+
+def create_error_response(code, message, details=None):
+    """
+    一貫したフォーマットでエラーレスポンスを作成
+
+    Args:
+        code (int): HTTPエラーコード
+        message (str): エラーメッセージ
+        details (dict, optional): 追加のエラー詳細
+
+    Returns:
+        tuple: (json_response, status_code)
+    """
+    response = {
+        "status": "error",
+        "code": code,
+        "message": message
+    }
+
+    if details:
+        response["details"] = details
+
+    return jsonify(response), code
+
+def create_success_response(data, meta=None):
+    """
+    一貫したフォーマットで成功レスポンスを作成
+
+    Args:
+        data (dict/list): レスポンスデータ
+        meta (dict, optional): メタデータ
+
+    Returns:
+        flask.Response: JSONレスポンス
+    """
+    response = {
+        "status": "success",
+        "data": data
+    }
+
+    if meta:
+        response["meta"] = meta
+
+    return jsonify(response)
+
+# API v1 エンドポイント (BFF用)
+
+@app.route('/api/devices', methods=['GET'])
+def get_devices():
+    """検出されたすべてのデバイスのリストを取得"""
+    devices = discovery.get_devices()
+    meta = {
+        "count": len(devices),
+        "online_count": len([d for d in devices if d["status"] == "online"])
+    }
+    return create_success_response({"devices": devices}, meta)
+
+@app.route('/api/devices/<device_id>/value', methods=['GET'])
+def get_device_value_endpoint(device_id):
+    """指定されたデバイスの現在値を取得"""
+    value_data = device_manager.get_device_value(device_id)
+
+    if not value_data:
+        return create_error_response(404, "Device not found or offline")
+
+    # デバイス情報を取得
+    device_info = discovery.get_device(device_id)
+    if not device_info:
+        return create_error_response(404, "Device information not available")
+
+    # 変換関数はすでにdevice_managerで処理済み
+    # result = value_data.copy()がすでに最適なフォーマットになっている
+    return create_success_response(value_data)
+
+@app.route('/api/values', methods=['GET'])
+def get_all_values():
+    """すべてのデバイスの現在値をまとめて取得"""
+    values = device_manager.get_all_values()
+    meta = {
+        "count": len(values),
+        "timestamp": datetime.now().timestamp()
+    }
+    return create_success_response({"values": values}, meta)
+
+@app.route('/api/scan', methods=['POST'])
+def scan_devices():
+    """ネットワークスキャンを開始"""
+    # 非同期でスキャンを実行
+    threading.Thread(target=lambda: discovery.discover_devices()).start()
+    return create_success_response({
+        "message": "スキャンを開始しました"
+    })
+
+@app.route('/api/devices/<device_id>/name', methods=['PUT'])
+def update_device_name(device_id):
+    """デバイスの表示名を更新"""
+    data = request.json
+    if not data or "name" not in data:
+        return create_error_response(400, "Name is required")
+
+    # デバイス名を更新
+    if discovery.update_device_name(device_id, data["name"]):
+        return create_success_response({
+            "device_id": device_id,
+            "new_name": data["name"]
+        })
+    else:
+        return create_error_response(404, "Device not found")
+
+# 拡張BFFエンドポイント
+
+@app.route('/api/statistics', methods=['GET'])
+def get_statistics():
+    """デバイスの統計情報を取得"""
+    stats = device_manager.get_device_statistics()
+    meta = {
+        "timestamp": datetime.now().timestamp(),
+        "calculation_mode": "real-time"
+    }
+    return create_success_response({"statistics": stats}, meta)
+
+@app.route('/api/devices/summary', methods=['GET'])
+def get_device_summary():
+    """デバイス情報と値をまとめて取得（BFF向けデータ集約）"""
+    summary = device_manager.get_device_summary()
+    meta = {
+        "timestamp": datetime.now().timestamp(),
+        "device_count": len(summary.get("devices", [])),
+        "source": "BFF aggregation"
+    }
+    return create_success_response(summary, meta)
+
+@app.route('/api/batch', methods=['POST'])
+def batch_operations():
+    """
+    複数操作の一括処理（BFFの集約機能）- 並行処理で最適化
+
+    複数のAPI操作を一度のリクエストで処理し、レスポンスを返します。
+    操作数が1以下の場合は逐次処理、それ以上の場合は並行処理で最適化します。
+
+    Returns:
+        flask.Response: 操作結果のJSONレスポンス
+    """
+    import concurrent.futures
+
+    operations = request.json.get('operations', [])
+
+    # 操作が空の場合は空の結果を返す
+    if not operations:
+        return create_success_response({'results': []}, {'count': 0})
+
+    # 操作が1つだけの場合は並行処理を使用しない
+    if len(operations) == 1:
+        results = [process_single_operation(operations[0])]
+        return create_success_response({'results': results}, {'count': 1})
+
+    # 並行処理を使用して操作を処理
+    results = [None] * len(operations)  # 結果を格納する配列を初期化
+
+    # ThreadPoolExecutorを使用して並行処理
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(10, len(operations))) as executor:
+        # 操作とインデックスをマップして並行実行
+        future_to_index = {
+            executor.submit(process_single_operation, op): i
+            for i, op in enumerate(operations)
+        }
+
+        # 完了した順に結果を取得
+        for future in concurrent.futures.as_completed(future_to_index):
+            index = future_to_index[future]
+            try:
+                results[index] = future.result()
+            except Exception as e:
+                logger.error(f"バッチ処理の結果取得でエラー: {e}")
+                results[index] = {
+                    'type': operations[index].get('type', 'unknown'),
+                    'result': None,
+                    'error': f"処理エラー: {str(e)}"
+                }
+
+    return create_success_response(
+        {'results': results},
+        {'count': len(results), 'timestamp': datetime.now().timestamp()}
+    )
+
+def process_single_operation(operation):
+    """
+    単一の操作を処理する共通関数
+
+    Args:
+        operation (dict): 処理する操作の辞書
+
+    Returns:
+        dict: 処理結果
+    """
+    op_type = operation.get('type')
+    op_params = operation.get('params', {})
+
+    try:
+        if op_type == 'get_device':
+            device_id = op_params.get('device_id')
+            device = discovery.get_device(device_id)
+            # デバイス情報がある場合は変換関数を使用
+            if device:
+                device = transform_device_for_frontend(device)
+            return {
+                'type': 'get_device',
+                'result': device
+            }
+
+        elif op_type == 'get_device_value':
+            device_id = op_params.get('device_id')
+            value = device_manager.get_device_value(device_id)
+            # すでに変換済みのデータを受け取るのでそのまま使用
+            return {
+                'type': 'get_device_value',
+                'result': value
+            }
+
+        elif op_type == 'get_statistics':
+            stats = device_manager.get_device_statistics()
+            # すでに変換済みのデータを受け取るのでそのまま使用
+            return {
+                'type': 'get_statistics',
+                'result': stats
+            }
+
+        else:
+            # 不明な操作タイプの場合はエラーを返す
+            logger.warning(f"不明な操作タイプ: {op_type}")
+            return {
+                'type': op_type,
+                'result': None,
+                'error': 'Unknown operation type'
+            }
+    except Exception as e:
+        # 例外が発生した場合はエラーログを記録して詳細を返す
+        logger.error(f"操作処理でエラー: {op_type} - {e}")
+        return {
+            'type': op_type,
+            'result': None,
+            'error': str(e)
+        }
+
+# シミュレーションモード関連のエンドポイント
+@app.route('/api/simulation/toggle', methods=['POST'])
+def toggle_simulation_mode():
+    """シミュレーションモードの切り替え"""
+    global SIMULATION_MODE
+    SIMULATION_MODE = not SIMULATION_MODE
+
+    return create_success_response({
+        "simulation_mode": SIMULATION_MODE
+    })
+
+@app.route('/api/simulation/status', methods=['GET'])
+def get_simulation_status():
+    """シミュレーションモードのステータスを取得"""
+    return create_success_response({
+        "simulation_mode": SIMULATION_MODE
+    })
+
+
+# 値変更検出と通知の共通関数
+def check_and_notify_value_change(device_id):
+    """
+    デバイス値を取得し、変更があれば通知する共通関数
+    アダプティブ通知：値の変化率と時間経過に基づいて通知頻度を最適化
+
+    Args:
+        device_id (str): デバイスID
+
+    Returns:
+        bool: 値が変更され通知が送信された場合はTrue、それ以外はFalse
+    """
+    global LAST_DEVICE_VALUES, LAST_NOTIFICATION_TIMES
+
+    current_time = datetime.now().timestamp()
+    value_data = device_manager.get_device_value(device_id, use_cache=False)
+    if not value_data:
+        return False
+
+    # 初回の場合は単純に通知
+    if device_id not in LAST_DEVICE_VALUES:
+        LAST_DEVICE_VALUES[device_id] = value_data.copy()
+        LAST_NOTIFICATION_TIMES[device_id] = current_time
+
+        # WebSocketで通知
+        socketio.emit('device_update', {
+            'device_id': device_id,
+            'data': value_data
+        })
+
+        logger.debug(f"デバイス {device_id} の初期値を通知: {value_data['value']}")
+        return True
+
+    # 前回の値と時間を取得
+    prev_value = LAST_DEVICE_VALUES[device_id]['value']
+    prev_notification_time = LAST_NOTIFICATION_TIMES.get(device_id, 0)
+    time_since_last_notification = current_time - prev_notification_time
+
+    # 値の変化量を計算
+    value_change = abs(value_data['value'] - prev_value)
+
+    # 通知条件の評価
+    should_notify = False
+
+    # 条件1: 大きな値の変化
+    if value_change >= NOTIFICATION_THRESHOLDS['value_change']:
+        should_notify = True
+        logger.debug(f"通知理由: 値の変化が大きい ({value_change})")
+
+    # 条件2: 適度な時間経過かつ値の変化
+    elif time_since_last_notification >= NOTIFICATION_THRESHOLDS['time_threshold'] and value_change > 0:
+        should_notify = True
+        logger.debug(f"通知理由: 時間経過 ({time_since_last_notification:.1f}秒) と値の変化あり")
+
+    # 条件3: 一定時間以上経過（変化がなくてもハートビートとして通知）
+    elif time_since_last_notification >= NOTIFICATION_THRESHOLDS['force_interval']:
+        should_notify = True
+        logger.debug(f"通知理由: 定期通知 ({time_since_last_notification:.1f}秒)")
+
+    # 通知が必要な場合
+    if should_notify:
+        # 値と通知時間を更新
+        LAST_DEVICE_VALUES[device_id] = value_data.copy()
+        LAST_NOTIFICATION_TIMES[device_id] = current_time
+
+        # WebSocketで通知（バッテリー最適化のためにクライアント数を確認）
+        client_count = len(socketio.server.eio.sockets)
+
+        # クライアントが接続されている場合のみ通知
+        if client_count > 0:
+            socketio.emit('device_update', {
+                'device_id': device_id,
+                'data': value_data
+            })
+
+            logger.debug(f"デバイス {device_id} の値変更を {client_count} クライアントに通知: {value_data['value']}")
+            return True
+        else:
+            logger.debug(f"クライアント接続なし - 通知スキップ: {device_id}")
+
+    # 値は更新するが通知はしない（次回の変化検出のため）
+    LAST_DEVICE_VALUES[device_id] = value_data.copy()
+    return False
+
+def create_or_update_sim_device(sim_id):
+    """
+    シミュレーションデバイスの作成または更新を行う
+
+    Args:
+        sim_id (str): シミュレーションデバイスのID
+
+    Returns:
+        bool: デバイスが新規作成された場合はTrue、それ以外はFalse
+    """
+    global LAST_DEVICE_VALUES
+    import random
+
+    # デバイスが存在しなければ作成
+    if sim_id not in LAST_DEVICE_VALUES:
+        # シミュレーションデバイスを登録（discovery.devicesはdict）
+        if sim_id not in discovery.devices:
+            sim_device = {
+                "id": sim_id,
+                "name": f"シミュレーション {sim_id[-1]}",
+                "ip": f"127.0.0.{sim_id[-1]}",
+                "status": "online",
+                "last_seen": datetime.now().timestamp()
+            }
+            discovery.devices[sim_id] = sim_device
+
+        # 初期値を設定
+        sim_value = {
+            "value": random.randint(0, 100),
+            "raw": random.randint(0, 1023),
+            "timestamp": datetime.now().timestamp()
+        }
+        LAST_DEVICE_VALUES[sim_id] = sim_value
+        device_manager.device_values[sim_id] = sim_value.copy()
+        return True
+
+    return False
+
+def update_sim_device_value(sim_id, change_probability=0.3, max_change=10):
+    """
+    シミュレーションデバイスの値を変更し、アダプティブ通知戦略に基づいて必要に応じて通知する
+
+    Args:
+        sim_id (str): シミュレーションデバイスのID
+        change_probability (float): 値変更の確率（0.0-1.0）
+        max_change (int): 最大変化量
+
+    Returns:
+        bool: 値が変更され通知が送信された場合はTrue、それ以外はFalse
+    """
+    import random
+    global LAST_DEVICE_VALUES, LAST_NOTIFICATION_TIMES
+
+    current_time = datetime.now().timestamp()
+
+    # 前回の値と通知時間を取得
+    prev_value = LAST_DEVICE_VALUES[sim_id]["value"]
+    prev_notification_time = LAST_NOTIFICATION_TIMES.get(sim_id, 0)
+    time_since_last_notification = current_time - prev_notification_time
+
+    # シミュレーション値の変更
+    if random.random() < change_probability:  # 指定された確率で変更
+        # 前回の値から少しだけ変化させる（自然な動き）
+        new_value = max(0, min(100, prev_value + random.randint(-max_change, max_change)))
+    else:
+        # 変更しない場合は前回の値をそのまま使用
+        new_value = prev_value
+
+    # 生の値を計算
+    new_raw = int(new_value * 10.23)  # 0-100を0-1023に変換
+
+    # シミュレーションデータを作成
+    sim_data = {
+        "value": new_value,
+        "raw": new_raw,
+        "timestamp": current_time
+    }
+
+    # 値の変化量を計算
+    value_change = abs(new_value - prev_value)
+
+    # 通知条件の評価
+    should_notify = False
+
+    # 条件1: 大きな値の変化
+    if value_change >= NOTIFICATION_THRESHOLDS['value_change']:
+        should_notify = True
+        logger.debug(f"通知理由: 値の変化が大きい ({value_change})")
+
+    # 条件2: 適度な時間経過かつ値の変化
+    elif time_since_last_notification >= NOTIFICATION_THRESHOLDS['time_threshold'] and value_change > 0:
+        should_notify = True
+        logger.debug(f"通知理由: 時間経過 ({time_since_last_notification:.1f}秒) と値の変化あり")
+
+    # 条件3: 一定時間以上経過（変化がなくてもハートビートとして通知）
+    elif time_since_last_notification >= NOTIFICATION_THRESHOLDS['force_interval']:
+        should_notify = True
+        logger.debug(f"通知理由: 定期通知 ({time_since_last_notification:.1f}秒)")
+
+    # 通知が必要な場合
+    if should_notify:
+        # 値と通知時間を更新
+        LAST_NOTIFICATION_TIMES[sim_id] = current_time
+
+        # WebSocketで通知（バッテリー最適化のためにクライアント数を確認）
+        client_count = len(socketio.server.eio.sockets)
+
+        # クライアントが接続されている場合のみ通知
+        if client_count > 0:
+            socketio.emit('device_update', {
+                'device_id': sim_id,
+                'data': sim_data
+            })
+
+            logger.debug(f"シミュレーションデバイス {sim_id} の値変更を {client_count} クライアントに通知: {new_value}")
+            result = True
+        else:
+            logger.debug(f"クライアント接続なし - 通知スキップ: {sim_id}")
+            result = False
+    else:
+        result = False
+
+    # 値は常に更新（次回の変化検出のため）
+    LAST_DEVICE_VALUES[sim_id] = sim_data.copy()
+    device_manager.device_values[sim_id] = sim_data.copy()
+
+    return result
+
+# ステータスエンドポイント
+@app.route('/api/status', methods=['GET'])
+def get_status():
+    """APIサーバーのステータスを取得"""
+    status_data = {
+        "api_status": "online",
+        "version": "1.0.0",
+        "simulation_mode": SIMULATION_MODE,
+        "device_count": len(discovery.devices)
+    }
+
+    meta = {
+        "timestamp": datetime.now().timestamp(),
+        "uptime": time.time() - app.start_time if hasattr(app, 'start_time') else 0
+    }
+
+    return create_success_response(status_data, meta)
+
+# アプリケーション開始前に初期スキャンを実行
+def initialize():
+    """アプリケーション初期化"""
+    # アプリケーション起動時間を記録
+    app.start_time = time.time()
+
+    # 別スレッドで初期スキャンを実行
+    threading.Thread(target=lambda: discovery.discover_devices()).start()
+
+# エラーハンドラ
+@app.errorhandler(404)
+def not_found(error):
+    return create_error_response(404, "Endpoint not found")
+
+@app.errorhandler(500)
+def server_error(error):
+    logger.error(f"サーバーエラーが発生しました: {error}")
+    details = None
+    if app.debug:
+        details = {
+            "exception": str(error),
+            "traceback": str(error.__traceback__)
+        }
+    return create_error_response(500, "Internal server error", details)
+
+# WebSocketイベントハンドラ
+@socketio.on('connect')
+def handle_connect():
+    """クライアント接続時の処理"""
+    logger.info("WebSocketクライアント接続: %s", request.sid)
+    # 接続時に最新の全デバイス値を送信
+    all_values = device_manager.get_all_values()
+    emit('all_values', all_values)
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    """クライアント切断時の処理"""
+    logger.info("WebSocketクライアント切断: %s", request.sid)
+
+@socketio.on('subscribe')
+def handle_subscribe(data):
+    """特定のデバイスのみ購読する"""
+    device_id = data.get('device_id')
+    if device_id:
+        logger.info("クライアント %s がデバイス %s を購読", request.sid, device_id)
+        # そのデバイスの最新値を送信
+        value_data = device_manager.get_device_value(device_id)
+        if value_data:
+            emit('device_update', {'device_id': device_id, 'data': value_data})
+
+# 一括通知のための変更検知とバッファリング
+def batch_notify_changes(device_updates):
+    """
+    複数のデバイス更新を一括通知
+
+    Args:
+        device_updates (dict): デバイスIDをキーとする更新データ辞書
+
+    Returns:
+        int: 通知されたデバイス数
+    """
+    if not device_updates:
+        return 0
+
+    # クライアント数を確認
+    client_count = len(socketio.server.eio.sockets)
+    if client_count == 0:
+        logger.debug(f"クライアント接続なし - 一括通知スキップ ({len(device_updates)}デバイス)")
+        return 0
+
+    # WebSocketで一括通知
+    socketio.emit('devices_update', {
+        'updates': device_updates,
+        'timestamp': datetime.now().timestamp()
+    })
+
+    logger.debug(f"一括通知: {len(device_updates)}デバイスの更新を{client_count}クライアントに送信")
+    return len(device_updates)
+
+# リアルタイムデータ監視タスク
+def realtime_monitor():
+    """
+    デバイスの値をリアルタイムに監視し、変更があればWebSocketで通知する
+    アダプティブ通知戦略とバッチ処理で最適化
+    短い間隔（100ms）で実行され、値の変化を即座に検出する
+    """
+    logger.info("リアルタイム監視タスク開始")
+
+    # 一括通知用の変数
+    batch_interval = 0.5  # 一括通知間隔（秒）
+    last_batch_time = time.time()
+    pending_updates = {}  # 通知待ちの更新 {device_id: value_data}
+
+    while True:
+        try:
+            current_time = time.time()
+
+            # オンラインデバイスの現在の値を取得
+            devices = discovery.get_devices()
+            online_devices = [d['id'] for d in devices if d['status'] == 'online']
+
+            # それぞれのデバイスの値をチェック（共通関数を使用）
+            for device_id in online_devices:
+                # 値を取得して変更を確認
+                value_data = device_manager.get_device_value(device_id, use_cache=False)
+                if not value_data:
+                    continue
+
+                # 初回または値の変化がある場合
+                if device_id not in LAST_DEVICE_VALUES:
+                    # 初回の場合は即時通知（接続時の初期表示のため）
+                    LAST_DEVICE_VALUES[device_id] = value_data.copy()
+                    LAST_NOTIFICATION_TIMES[device_id] = current_time
+                    # 接続時の初期表示は重要なので個別通知
+                    socketio.emit('device_update', {
+                        'device_id': device_id,
+                        'data': value_data
+                    })
+                    logger.debug(f"デバイス {device_id} の初期値を通知: {value_data['value']}")
+                    continue
+
+                # 前回の値と時間を取得
+                prev_value = LAST_DEVICE_VALUES[device_id]['value']
+                prev_notification_time = LAST_NOTIFICATION_TIMES.get(device_id, 0)
+                time_since_last_notification = current_time - prev_notification_time
+
+                # 値の変化量を計算
+                value_change = abs(value_data['value'] - prev_value)
+
+                # 通知条件の評価
+                should_notify = False
+
+                # 条件1: 大きな値の変化
+                if value_change >= NOTIFICATION_THRESHOLDS['value_change']:
+                    should_notify = True
+
+                # 条件2: 適度な時間経過かつ値の変化
+                elif time_since_last_notification >= NOTIFICATION_THRESHOLDS['time_threshold'] and value_change > 0:
+                    should_notify = True
+
+                # 条件3: 一定時間以上経過（変化がなくてもハートビートとして通知）
+                elif time_since_last_notification >= NOTIFICATION_THRESHOLDS['force_interval']:
+                    should_notify = True
+
+                # 通知が必要な場合は更新バッファに追加
+                if should_notify:
+                    # 通知時間と値を更新
+                    LAST_DEVICE_VALUES[device_id] = value_data.copy()
+                    LAST_NOTIFICATION_TIMES[device_id] = current_time
+                    # バッチ通知用にバッファに追加
+                    pending_updates[device_id] = value_data
+                else:
+                    # 値は常に更新（次回の変化検出のため）
+                    LAST_DEVICE_VALUES[device_id] = value_data.copy()
+
+            # シミュレーションモードの場合も処理
+            if SIMULATION_MODE:
+                # シミュレーション用デバイスを確保（存在しなければ作成）
+                sim_device_ids = [f"sim_{i}" for i in range(1, 4)]  # 3つのシミュレーションデバイス
+
+                for sim_id in sim_device_ids:
+                    # デバイスが存在しなければ作成
+                    is_new = create_or_update_sim_device(sim_id)
+                    if is_new:
+                        # 初回作成時は個別通知（接続時の初期表示のため）
+                        socketio.emit('device_update', {
+                            'device_id': sim_id,
+                            'data': LAST_DEVICE_VALUES[sim_id]
+                        })
+                        continue
+
+                    # シミュレーション値を更新
+                    current_time = time.time()
+                    prev_value = LAST_DEVICE_VALUES[sim_id]["value"]
+                    prev_notification_time = LAST_NOTIFICATION_TIMES.get(sim_id, 0)
+                    time_since_last_notification = current_time - prev_notification_time
+
+                    # シミュレーション値の計算
+                    import random
+                    if random.random() < 0.3:  # 30%の確率で値が変わる
+                        new_value = max(0, min(100, prev_value + random.randint(-10, 10)))
+                    else:
+                        new_value = prev_value
+
+                    new_raw = int(new_value * 10.23)  # 0-100を0-1023に変換
+
+                    # シミュレーションデータを作成
+                    sim_data = {
+                        "value": new_value,
+                        "raw": new_raw,
+                        "timestamp": current_time
+                    }
+
+                    # 値の変化量を計算
+                    value_change = abs(new_value - prev_value)
+
+                    # 通知条件の評価
+                    should_notify = False
+
+                    # 条件1: 大きな値の変化
+                    if value_change >= NOTIFICATION_THRESHOLDS['value_change']:
+                        should_notify = True
+
+                    # 条件2: 適度な時間経過かつ値の変化
+                    elif time_since_last_notification >= NOTIFICATION_THRESHOLDS['time_threshold'] and value_change > 0:
+                        should_notify = True
+
+                    # 条件3: 一定時間以上経過（変化がなくてもハートビートとして通知）
+                    elif time_since_last_notification >= NOTIFICATION_THRESHOLDS['force_interval']:
+                        should_notify = True
+
+                    # 値は常に更新（次回の変化検出のため）
+                    LAST_DEVICE_VALUES[sim_id] = sim_data.copy()
+
+                    # 通知が必要な場合はバッファに追加
+                    if should_notify:
+                        LAST_NOTIFICATION_TIMES[sim_id] = current_time
+                        pending_updates[sim_id] = sim_data
+
+            # 一定間隔で一括通知（バッファに貯まっている更新を送信）
+            if (current_time - last_batch_time >= batch_interval) and pending_updates:
+                batch_notify_changes(pending_updates)
+                pending_updates = {}  # バッファをクリア
+                last_batch_time = current_time
+
+            # 短い間隔で監視（100ms）
+            eventlet.sleep(UPDATE_INTERVAL)
+
+        except Exception as e:
+            logger.error(f"リアルタイム監視エラー: {e}")
+            eventlet.sleep(1)  # エラー時は少し長めに待機
+
+# リアルタイム監視開始関数
+def start_realtime_monitor():
+    """リアルタイム監視タスクを開始"""
+    # リアルタイム監視タスクをバックグラウンドで開始
+    eventlet.spawn(realtime_monitor)
+
+# 使用可能なポートを探す関数
+def find_available_port(start_port, max_attempts=10):
+    """
+    使用可能なポートを探す
+
+    Args:
+        start_port (int): 開始ポート番号
+        max_attempts (int): 試行回数
+
+    Returns:
+        int: 使用可能なポート番号、見つからなければ0
+    """
+    import socket
+
+    for port in range(start_port, start_port + max_attempts):
+        try:
+            # テスト用にソケットを開いてみる
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind(('0.0.0.0', port))
+                return port
+        except OSError:
+            continue
+
+    # 使用可能なポートが見つからなかった
+    return 0
+
+# メイン実行
+if __name__ == '__main__':
+    import argparse
+
+    # コマンドライン引数のパース
+    parser = argparse.ArgumentParser(description='PedanticLeverController BFF API サーバー')
+    parser.add_argument('--port', type=int, default=5000, help='サーバーのポート番号 (デフォルト: 5000)')
+    parser.add_argument('--host', type=str, default='0.0.0.0', help='サーバーのホスト (デフォルト: 0.0.0.0)')
+    parser.add_argument('--auto-port', action='store_true', help='使用中のポートを自動的に回避')
+    args = parser.parse_args()
+
+    # ポートが使用中の場合は別のポートを探す
+    port = args.port
+    if args.auto_port:
+        available_port = find_available_port(port)
+        if available_port > 0:
+            port = available_port
+        else:
+            print(f"警告: {port}〜{port+9}の範囲で使用可能なポートが見つかりません。デフォルトポートを使用します。")
+
+    # 開発モードでの起動
+    print("====================================================")
+    print(" PedanticLeverController BFF API サーバー")
+    print(" (C) 2023 Pedantic Co., Ltd.")
+    print("====================================================")
+    print(f" ホスト: {args.host}")
+    print(f" ポート: {port}")
+    print("====================================================")
+
+    # アプリケーションを初期化
+    initialize()
+    start_realtime_monitor()
+
+    try:
+        # WebSocketサーバーとして起動
+        socketio.run(app, host=args.host, port=port, debug=True)
+    except OSError as e:
+        if "Address already in use" in str(e):
+            print(f"エラー: ポート {port} は既に使用されています。")
+            print("別のポートを使用するには、--port オプションで別のポート番号を指定するか、")
+            print("--auto-port オプションを使用して自動的に空きポートを探すことができます。")
+            print("例: python app.py --port 5001")
+            print("例: python app.py --auto-port")
+        else:
+            raise

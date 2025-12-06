@@ -1,0 +1,49 @@
+# Python関連のキャッシュファイル
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Flask関連
+instance/
+.webassets-cache
+
+# 仮想環境
+venv/
+env/
+ENV/
+
+# IDE関連
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS関連
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# 既存のLeverFirmwareの.gitignoreと統合
+# ※LeverFirmwareディレクトリに既に.gitignoreがある場合は、そちらの設定が優先されます

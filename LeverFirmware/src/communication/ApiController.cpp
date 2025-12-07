@@ -83,7 +83,7 @@ String ApiController::handleRequest(const String& request)
   }
 
   // 不明なエンドポイントの場合はエラーを返す
-  StaticJsonDocument<128> errorDoc;
+  JsonDocument errorDoc;
   errorDoc["status"] = "error";
   errorDoc["message"] = "Unknown API endpoint";
 
@@ -95,14 +95,14 @@ String ApiController::handleRequest(const String& request)
 // APIルートエンドポイントの処理（センサーデータ取得）
 String ApiController::handleApiRoot()
 {
-  StaticJsonDocument<256> jsonDoc;
+  JsonDocument jsonDoc;
 
   // デバイス情報
   jsonDoc["device_id"] = _deviceId;
   jsonDoc["timestamp"] = millis() / 1000; // 簡易的なタイムスタンプ
 
   // センサーデータ
-  JsonObject data = jsonDoc.createNestedObject("data");
+  JsonObject data = jsonDoc["data"].to<JsonObject>();
 
   // コールバックが設定されていれば値を取得
   if (_getRawValueCallback) {
@@ -131,7 +131,7 @@ String ApiController::handleApiRoot()
   data["calib_max"] = maxValue;
 
   // ステータス情報
-  JsonObject status = jsonDoc.createNestedObject("status");
+  JsonObject status = jsonDoc["status"].to<JsonObject>();
   status["error_code"] = _errorCode;
 
   // レスポンスのシリアライズ
@@ -143,7 +143,7 @@ String ApiController::handleApiRoot()
 // キャリブレーションリセットエンドポイントの処理
 String ApiController::handleApiResetCalib()
 {
-  StaticJsonDocument<128> jsonDoc;
+  JsonDocument jsonDoc;
 
   // コールバックが設定されていればリセット実行
   if (_resetCalibrationCallback) {
@@ -164,7 +164,7 @@ String ApiController::handleApiResetCalib()
 // LED表示モード設定エンドポイントの処理
 String ApiController::handleApiSetLedMode(int mode)
 {
-  StaticJsonDocument<128> jsonDoc;
+  JsonDocument jsonDoc;
 
   // コールバックが設定されていれば表示モード変更
   if (_setLedModeCallback) {

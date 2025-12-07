@@ -39,7 +39,7 @@ void Communication::setDeviceId(const char *id)
 void Communication::sendData(int rawValue, int smoothedValue, int calibratedValue,
                              bool isCalibrated, int calibMin, int calibMax, int errorCode)
 {
-  StaticJsonDocument<256> jsonDoc;
+  JsonDocument jsonDoc;
 
   // デバイスID
   jsonDoc["device_id"] = _deviceId;
@@ -48,7 +48,7 @@ void Communication::sendData(int rawValue, int smoothedValue, int calibratedValu
   jsonDoc["timestamp"] = getTimestamp();
 
   // センサー値
-  JsonObject data = jsonDoc.createNestedObject("data");
+  JsonObject data = jsonDoc["data"].to<JsonObject>();
   data["raw"] = rawValue;
   data["smoothed"] = smoothedValue;
   data["value"] = calibratedValue;
@@ -57,7 +57,7 @@ void Communication::sendData(int rawValue, int smoothedValue, int calibratedValu
   data["calib_max"] = calibMax;
 
   // ステータス
-  JsonObject status = jsonDoc.createNestedObject("status");
+  JsonObject status = jsonDoc["status"].to<JsonObject>();
   status["error_code"] = errorCode;
 
   // JSONシリアライズ＆送信

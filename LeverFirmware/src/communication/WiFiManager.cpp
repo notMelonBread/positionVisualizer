@@ -10,16 +10,22 @@
 
 // コンストラクタ
 RealWiFiManager::RealWiFiManager(uint16_t httpPort)
-  : _webServer(httpPort),
+  : _wifiManager(),
     _networkStatus(DISCONNECTED),
+    // _deviceId はコンストラクタ本体で初期化
     _lastStatusCheck(0),
+    _webServer(httpPort),
+    _apiHandler(nullptr),
+    _udp(),
     _discoveryEnabled(false),
+    // _udpBuffer は配列なのでここでは初期化しない
     _rawValue(0),
     _calibratedValue(0),
     _isCalibrated(false),
     _minValue(0),
     _maxValue(1023),
     _errorCode(0),
+    _httpPort(httpPort),
     _reconnectAttemptCount(0), // 追加: 再接続カウンター初期化
     _lastReconnectAttempt(0) // 追加: 最終再接続時間の初期化
 {
@@ -398,17 +404,17 @@ void RealWiFiManager::handleApiRequest()
     _webServer.send(200, "application/json", response);
   } else {
     // コールバックが設定されていない場合はデフォルトのレスポンスを返す
-    StaticJsonDocument<256> jsonDoc;
+    JsonDocument jsonDoc;
     jsonDoc["device_id"] = _deviceId;
 
-    JsonObject data = jsonDoc.createNestedObject("data");
+    JsonObject data = jsonDoc["data"].to<JsonObject>();
     data["raw"] = _rawValue;
     data["value"] = _calibratedValue;
     data["calibrated"] = _isCalibrated;
     data["calib_min"] = _minValue;
     data["calib_max"] = _maxValue;
 
-    JsonObject status = jsonDoc.createNestedObject("status");
+    JsonObject status = jsonDoc["status"].to<JsonObject>();
     status["error_code"] = _errorCode;
     status["wifi_rssi"] = WiFi.RSSI();
 
@@ -450,7 +456,7 @@ void RealWiFiManager::processUdpDiscovery()
 // ディスカバリー応答のJSON生成
 String RealWiFiManager::createDiscoveryResponse()
 {
-  StaticJsonDocument<128> jsonDoc;
+  JsonDocument jsonDoc;
 
   jsonDoc["type"] = "lever";
   jsonDoc["id"] = _deviceId;
@@ -589,17 +595,17 @@ String MockWiFiManager::processApiRequest(const String& request)
     return _apiHandler(request);
   } else {
     // コールバックが設定されていない場合はデフォルトのレスポンスを返す
-    StaticJsonDocument<256> jsonDoc;
+    JsonDocument jsonDoc;
     jsonDoc["device_id"] = _deviceId;
 
-    JsonObject data = jsonDoc.createNestedObject("data");
+    JsonObject data = jsonDoc["data"].to<JsonObject>();
     data["raw"] = _rawValue;
     data["value"] = _calibratedValue;
     data["calibrated"] = _isCalibrated;
     data["calib_min"] = _minValue;
     data["calib_max"] = _maxValue;
 
-    JsonObject status = jsonDoc.createNestedObject("status");
+    JsonObject status = jsonDoc["status"].to<JsonObject>();
     status["error_code"] = _errorCode;
     status["wifi_rssi"] = -65; // シミュレートされたRSSI値
 

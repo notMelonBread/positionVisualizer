@@ -1,7 +1,6 @@
 /**
  * overlayApp.js - Application Entry Point
  * オーバーレイウィンドウのエントリーポイント
- * ARCHITECTURE.mdに従った依存性注入パターンで実装
  */
 (function() {
   'use strict';

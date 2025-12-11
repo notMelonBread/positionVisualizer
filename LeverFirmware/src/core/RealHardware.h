@@ -20,9 +20,6 @@ public:
   }
 
   void begin() {
-    // アナログピンの初期化（必要に応じて）
-    //pinMode(_pin, INPUT);
-
     // 初期値を読み取り
     _lastValue = analogRead(_pin);
     _lastCheckTime = micros();
@@ -174,7 +171,6 @@ public:
 
   void update() override {
     bool rawState = readRawState();
-    DEBUG_INFO(rawState);
     // デバウンス処理
     if (rawState != _lastRawState) {
       _lastDebounceTime = millis();
@@ -187,6 +183,11 @@ public:
         _lastChangeTime = millis();
       }
     }
+
+    // ボタンがOFF→ONに変化した時の処理
+    if(wasPressed()) _pressCaliButtonCallback();
+    // ボタンがON→OFFに変化した時の処理
+    if(wasReleased()) _releasedCaliButtonCallback();
 
     _lastRawState = rawState;
     _lastState = _state;

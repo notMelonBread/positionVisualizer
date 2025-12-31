@@ -110,9 +110,6 @@ export class DeviceListViewModel {
       this._updateDeviceTemporaryDisabled();
     }
 
-    // 表示対象デバイスのフィルタリング
-    // visibleプロパティに関わらず、すべての接続済みデバイスを表示リストに含める
-    // これにより、非表示にしたデバイスを再度表示（トグルON）できるようになる
     const visibleDevices = devices;
 
     if (visibleDevices.length === 0) {
@@ -386,8 +383,6 @@ export class DeviceListViewModel {
     // 表示/非表示トグルを更新
     const toggleInput = deviceGroup.querySelector('.toggle-switch input');
     if (toggleInput) {
-      // deviceオブジェクトがDeviceインスタンスの場合（getterあり）と
-      // POJOの場合（metadataプロパティ経由）の両方に対応
       const isVisible = device.visible !== undefined ? device.visible : 
                         (device.metadata && device.metadata.visible !== undefined ? device.metadata.visible : true);
       toggleInput.checked = isVisible;

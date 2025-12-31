@@ -448,8 +448,15 @@ export class MeterRenderer {
                                Array.isArray(viewModelState.tempDisconnected);
 
     // 接続されているデバイス、または一時的に切断されているデバイスのインデックスを取得
+    // かつ、表示設定が有効(visible !== false)なデバイスのみを対象とする
     const connectedIndices = viewModelState.connected
-      .map((connected, i) => (connected || (hasTempDisconnected && viewModelState.tempDisconnected[i])) ? i : -1)
+      .map((connected, i) => {
+        const isConnectedOrTemp = (connected || (hasTempDisconnected && viewModelState.tempDisconnected[i]));
+        // 表示設定を確認（デフォルトは表示）
+        const isVisible = Array.isArray(viewModelState.visible) && viewModelState.visible[i] !== false;
+        
+        return (isConnectedOrTemp && isVisible) ? i : -1;
+      })
       .filter(i => i !== -1);
 
     // 接続デバイス数に合わせてレイアウトを調整

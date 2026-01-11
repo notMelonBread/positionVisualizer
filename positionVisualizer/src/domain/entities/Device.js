@@ -20,6 +20,14 @@ export class Device {
   }
 
   /**
+   * デバイスの表示状態を取得
+   * @returns {boolean} 表示するかどうか（デフォルトはtrue）
+   */
+  get visible() {
+    return this.metadata.visible !== false;
+  }
+
+  /**
    * デバイスを接続状態に設定
    */
   connect() {
